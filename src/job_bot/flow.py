@@ -1,10 +1,16 @@
 import os
 from typing import Any, Optional
 
+from langchain.agents import create_agent
+from langchain.messages import HumanMessage, SystemMessage
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import create_react_agent
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class PayRange(BaseModel):
+    minimum: int
+    maximum: int
 
 
 class JobEntry(BaseModel):
@@ -14,20 +20,21 @@ class JobEntry(BaseModel):
     company_name: str
     job_location: str
     jd_summary: str
-    pay_range: tuple[int, int]
+    pay_range: PayRange
 
 
-class JobSearchCriteria(BaseModel):
+class JobQuery(BaseModel):
     job_title: str
     year_of_experience: int
     job_location: str
-    pay_range: tuple[int, int]
+    pay_range: PayRange
     tech_stack: list[str]
     extra_criteria: Optional[list[str]] = None
+    num_limit: int = 5
 
 
 class JobSearchResponse(BaseModel):
-    jobs: list[JobEntry]
+    jobs: list[JobEntry] = Field(default_factory=list)
 
 
 SYSTEM_PROMPT = """
@@ -65,26 +72,26 @@ def _message_content_to_text(content: Any) -> str:
     return str(content)
 
 
-def _build_search_prompt(criteria: JobSearchCriteria) -> str:
-    min_pay, max_pay = criteria.pay_range
-    extra = ", ".join(criteria.extra_criteria or []) or "None"
-    stack = ", ".join(criteria.tech_stack)
+def _build_search_prompt(query: JobQuery) -> str:
+    min_pay, max_pay = query.pay_range.minimum, query.pay_range.maximum
+    extra = ", ".join(query.extra_criteria or []) or "None"
+    stack = ", ".join(query.tech_stack)
     return (
-        "Find job opportunities that match these criteria:\n"
-        f"- Job title: {criteria.job_title}\n"
-        f"- Years of experience: {criteria.year_of_experience}\n"
-        f"- Location: {criteria.job_location}\n"
+        f"Find at most {query.num_limit} job opportunities that match these criteria:\n"
+        f"- Job title: {query.job_title}\n"
+        f"- Years of experience: {query.year_of_experience}\n"
+        f"- Location: {query.job_location}\n"
         f"- Pay range target: {min_pay} to {max_pay}\n"
         f"- Tech stack: {stack}\n"
         f"- Extra criteria: {extra}\n\n"
         "For each matching role, include:\n"
         "- job_title\n- url\n- year_of_experience\n- company_name\n"
         "- job_location\n- jd_summary\n- pay_range\n\n"
-        "If pay range is not explicitly listed, infer an estimated range and note that in jd_summary."
+        "If pay range is not explicitly listed, infer an estimated range and note that in jd_summary.",
     )
 
 
-def find_jobs(criteria: JobSearchCriteria) -> list[JobEntry]:
+def find_jobs(query: JobQuery) -> list[JobEntry]:
     _require_env_var("OPENAI_API_KEY")
     _require_env_var("TAVILY_API_KEY")
 
@@ -92,36 +99,22 @@ def find_jobs(criteria: JobSearchCriteria) -> list[JobEntry]:
     llm = ChatOpenAI(model=model_name, temperature=0)
     search_tool = TavilySearchResults(max_results=8)
 
-    agent = create_react_agent(model=llm, tools=[search_tool], prompt=SYSTEM_PROMPT)
-    agent_result = agent.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": _build_search_prompt(criteria),
-                }
-            ]
-        }
-    )
+    agent = create_agent(model=llm, tools=[search_tool], system_prompt=SYSTEM_PROMPT)
+    agent_result = agent.invoke(HumanMessage(_build_search_prompt(query)))
 
     final_message = agent_result["messages"][-1]
     research_notes = _message_content_to_text(final_message.content)
 
     extractor = llm.with_structured_output(JobSearchResponse)
-    structured = extractor.invoke(
+    structured: JobSearchResponse = extractor.invoke(
         [
-            (
-                "system",
-                "Extract validated job entries from research notes. "
-                "Only include postings that are likely real and have a URL.",
+            SystemMessage(
+                content="Extract validated job entries from research notes. Only include postings that are likely real and have a URL."
             ),
-            (
-                "user",
-                "Search criteria:\n"
-                f"{criteria.model_dump_json(indent=2)}\n\n"
-                "Research notes:\n"
-                f"{research_notes}",
-            ),
+            HumanMessage(content=f"""Search criteria:
+{query.model_dump_json(indent=2)}
+Research notes:
+{research_notes}"""),
         ]
     )
     return structured.jobs

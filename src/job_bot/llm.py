@@ -1,9 +1,16 @@
-import importlib
 import os
 from abc import ABC, abstractmethod
-from typing import Any, cast
+from typing import cast
 
 from langchain.chat_models.base import BaseChatModel
+from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_huggingface import (
+    ChatHuggingFace,
+    HuggingFaceEndpoint,
+)
+from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 
 
 def _resolve_secret(explicit: str | None, env_var: str) -> str:
@@ -11,19 +18,6 @@ def _resolve_secret(explicit: str | None, env_var: str) -> str:
     if not value:
         raise RuntimeError(f"Missing credential. Set {env_var} or pass it explicitly.")
     return value
-
-
-def _import_attr(module_name: str, attr_name: str) -> Any:
-    try:
-        module = importlib.import_module(module_name)
-    except ImportError as exc:
-        raise RuntimeError(
-            f"Missing dependency '{module_name}'. Install it to use this provider."
-        ) from exc
-    try:
-        return getattr(module, attr_name)
-    except AttributeError as exc:
-        raise RuntimeError(f"Dependency '{module_name}' does not expose '{attr_name}'.") from exc
 
 
 class LLMProvider(ABC):
@@ -46,10 +40,9 @@ class OpenAILLMProvider(LLMProvider):
         self.base_url = base_url
 
     def get_model(self) -> BaseChatModel:
-        chat_openai_cls = _import_attr("langchain_openai", "ChatOpenAI")
         return cast(
             BaseChatModel,
-            chat_openai_cls(
+            ChatOpenAI(
                 model=self.model,
                 temperature=self.temperature,
                 api_key=_resolve_secret(self.api_key, "OPENAI_API_KEY"),
@@ -70,10 +63,9 @@ class GeminiLLMProvider(LLMProvider):
         self.api_key = api_key
 
     def get_model(self) -> BaseChatModel:
-        chat_google_cls = _import_attr("langchain_google_genai", "ChatGoogleGenerativeAI")
         return cast(
             BaseChatModel,
-            chat_google_cls(
+            ChatGoogleGenerativeAI(
                 model=self.model,
                 temperature=self.temperature,
                 api_key=_resolve_secret(self.api_key, "GOOGLE_API_KEY"),
@@ -93,10 +85,9 @@ class AnthropicLLMProvider(LLMProvider):
         self.api_key = api_key
 
     def get_model(self) -> BaseChatModel:
-        chat_anthropic_cls = _import_attr("langchain_anthropic", "ChatAnthropic")
         return cast(
             BaseChatModel,
-            chat_anthropic_cls(
+            ChatAnthropic(
                 model_name=self.model,
                 temperature=self.temperature,
                 api_key=_resolve_secret(self.api_key, "ANTHROPIC_API_KEY"),
@@ -122,9 +113,7 @@ class HuggingFaceRemoteLLMProvider(LLMProvider):
         self.max_new_tokens = max_new_tokens
 
     def get_model(self) -> BaseChatModel:
-        endpoint_cls = _import_attr("langchain_huggingface", "HuggingFaceEndpoint")
-        chat_hf_cls = _import_attr("langchain_huggingface", "ChatHuggingFace")
-        llm = endpoint_cls(
+        llm = HuggingFaceEndpoint(
             model=self.model,
             endpoint_url=self.endpoint_url,
             provider=self.provider,
@@ -135,7 +124,7 @@ class HuggingFaceRemoteLLMProvider(LLMProvider):
             temperature=self.temperature,
             max_new_tokens=self.max_new_tokens,
         )
-        return cast(BaseChatModel, chat_hf_cls(llm=llm))
+        return cast(BaseChatModel, ChatHuggingFace(llm=llm))
 
 
 class OllamaLLMProvider(LLMProvider):
@@ -150,10 +139,9 @@ class OllamaLLMProvider(LLMProvider):
         self.base_url = base_url or os.getenv("OLLAMA_BASE_URL")
 
     def get_model(self) -> BaseChatModel:
-        chat_ollama_cls = _import_attr("langchain_ollama", "ChatOllama")
         return cast(
             BaseChatModel,
-            chat_ollama_cls(
+            ChatOllama(
                 model=self.model,
                 temperature=self.temperature,
                 base_url=self.base_url,
