@@ -1,0 +1,246 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - "**"
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  BUCKET_NAME: ${{ vars.GCP_BUCKET_NAME }}
+  REGION: ${{ vars.GCP_REGION }}
+  SERVICE: ${{ vars.CLOUD_RUN_SERVICE_NAME }}
+  WORKLOAD_IDENTITY_PROVIDER: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-wf-pool/providers/github-provider
+  SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+  FUNCTION_SOURCE: src/algo_trader/handlers/functions.py
+
+jobs:
+  deploy:
+    runs-on: "ubuntu-latest"
+
+    permissions:
+      contents: "read"
+      id-token: "write"
+
+    steps:
+      - name: "Checkout"
+        uses: "actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332" # actions/checkout@v4
+
+      # Configure Workload Identity Federation and generate an access token.
+      #
+      # See https://github.com/google-github-actions/auth for more options,
+      # including authenticating via a JSON credentials file.
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: "google-github-actions/auth@f112390a2df9932162083945e46d439060d66ec2" # google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "${{ env.WORKLOAD_IDENTITY_PROVIDER }}"
+          service_account: "${{ env.SERVICE_ACCOUNT }}"
+          token_format: "access_token"
+
+      # BEGIN - Docker auth and build
+      #
+      # If you already have a container image, you can omit these steps.
+      - name: "Docker Auth"
+        uses: "docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567" # docker/login-action@v3
+        with:
+          username: "oauth2accesstoken"
+          password: "${{ steps.auth.outputs.access_token }}"
+          registry: "${{ env.REGION }}-docker.pkg.dev"
+
+      - name: "Build and Push Cloud Run Function"
+        run: |-
+          DOCKER_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}-functions:${{ github.sha }}"
+          docker build --tag "${DOCKER_TAG}" --file deployment/Dockerfile .  --target functions
+          docker push "${DOCKER_TAG}"
+
+      - name: "Setup Google Cloud CLI"
+        uses: "google-github-actions/setup-gcloud@v2"
+
+      - name: "Resolve branch deployment env"
+        run: |-
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            alpaca_paper=0
+            deploy_env=prod
+          else
+            alpaca_paper=1
+            deploy_env=dev
+          fi
+
+          echo "ALPACA_PAPER=${alpaca_paper}" >> "$GITHUB_ENV"
+          echo "ENV=${deploy_env}" >> "$GITHUB_ENV"
+          echo "Branch ${GITHUB_REF_NAME} will deploy with ALPACA_PAPER=${alpaca_paper} and ENV=${deploy_env}"
+
+      - name: "Discover Cloud Run HTTP functions"
+        id: "discover_functions"
+        run: |-
+          mapfile -t FUNCTION_NAMES < <(python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          source_path = Path("${{ env.FUNCTION_SOURCE }}")
+          module = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+
+          discovered_functions = []
+          for node in module.body:
+              if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  continue
+
+              for decorator in node.decorator_list:
+                  if (
+                      isinstance(decorator, ast.Attribute)
+                      and isinstance(decorator.value, ast.Name)
+                      and decorator.value.id == "functions_framework"
+                      and decorator.attr == "http"
+                  ):
+                      discovered_functions.append(node.name)
+                      break
+
+          if not discovered_functions:
+              raise SystemExit(f"No functions_framework.http decorators found in {source_path}")
+
+          for function_name in discovered_functions:
+              print(function_name)
+          PY
+          )
+
+          printf '%s\n' "${FUNCTION_NAMES[@]}" > /tmp/cloud_run_http_functions.txt
+
+          {
+            echo "function_names<<EOF"
+            cat /tmp/cloud_run_http_functions.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Discovered Cloud Run HTTP functions:"
+          cat /tmp/cloud_run_http_functions.txt
+
+      - name: "Deploy Cloud Run HTTP functions"
+        run: |-
+          DOCKER_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}-functions:${{ github.sha }}"
+
+          while IFS= read -r function_name; do
+            [ -z "$function_name" ] && continue
+
+            service_name="${{ env.SERVICE }}-${function_name//_/-}"
+
+            gcloud run deploy "$service_name" \
+              --project "${{ env.PROJECT_ID }}" \
+              --region "${{ env.REGION }}" \
+              --image "$DOCKER_TAG" \
+              --command=python \
+              --args="-m,functions_framework,--target=${function_name},--source=${{ env.FUNCTION_SOURCE }},--signature-type=http,--port=8080" \
+              --update-env-vars="ALPACA_PAPER=${ALPACA_PAPER},ENV=${ENV},GCP_PROJECT_ID=${PROJECT_ID},GCP_BUCKET_NAME=${BUCKET_NAME}" \
+              --no-allow-unauthenticated
+
+            deployed_url="$(gcloud run services describe "$service_name" \
+              --project "${{ env.PROJECT_ID }}" \
+              --region "${{ env.REGION }}" \
+              --format='value(status.url)')"
+
+            echo "${service_name} => ${deployed_url}"
+
+            if [[ "${function_name}" == "system_check" ]]; then
+              echo "SYSTEM_CHECK_SERVICE_NAME=${service_name}" >> "${GITHUB_ENV}"
+              echo "SYSTEM_CHECK_SERVICE_URL=${deployed_url}" >> "${GITHUB_ENV}"
+            fi
+
+          done < /tmp/cloud_run_http_functions.txt
+
+      - id: "system-check-auth"
+        name: "Generate Cloud Run ID token"
+        uses: "google-github-actions/auth@f112390a2df9932162083945e46d439060d66ec2"
+        with:
+          workload_identity_provider: "${{ env.WORKLOAD_IDENTITY_PROVIDER }}"
+          service_account: "${{ env.SERVICE_ACCOUNT }}"
+          token_format: "id_token"
+          id_token_audience: "${{ env.SYSTEM_CHECK_SERVICE_URL }}"
+          id_token_include_email: true
+
+      - name: "Smoke Test"
+        shell: bash
+        env:
+          ID_TOKEN: "${{ steps.system-check-auth.outputs.id_token }}"
+        run: |-
+          set -euo pipefail
+
+          readonly max_attempts=5
+          readonly response_file="/tmp/system-check-response.txt"
+
+          if [[ -z "${SYSTEM_CHECK_SERVICE_URL:-}" ]]; then
+            echo "::error::SYSTEM_CHECK_SERVICE_URL is empty"
+            exit 1
+          fi
+
+          if [[ -z "${ID_TOKEN:-}" ]]; then
+            echo "::error::Failed to generate Cloud Run ID token"
+            exit 1
+          fi
+
+          echo "Running system check on ${SYSTEM_CHECK_SERVICE_URL}"
+
+          for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+            rm -f "${response_file}"
+
+            curl_exit_code=0
+
+            status_code="$(
+              curl \
+                --silent \
+                --show-error \
+                --connect-timeout 10 \
+                --max-time 30 \
+                --output "${response_file}" \
+                --write-out "%{http_code}" \
+                --header "Authorization: Bearer ${ID_TOKEN}" \
+                "${SYSTEM_CHECK_SERVICE_URL}"
+            )" || curl_exit_code=$?
+
+            if ((curl_exit_code != 0)); then
+              status_code="000"
+              echo "::warning::curl failed with exit code ${curl_exit_code}"
+            fi
+
+            if [[ "${status_code}" == "200" ]]; then
+              echo "System check passed with HTTP 200"
+
+              if [[ -s "${response_file}" ]]; then
+                cat "${response_file}"
+                echo
+              fi
+
+              exit 0
+            fi
+
+            echo "::warning::Attempt ${attempt}/${max_attempts} failed with HTTP ${status_code}"
+
+            if [[ -s "${response_file}" ]]; then
+              echo "Response body:"
+              cat "${response_file}"
+              echo
+            fi
+
+            if ((attempt < max_attempts)); then
+              sleep $((attempt * 2))
+            fi
+          done
+
+          echo "::error::System check failed after ${max_attempts} attempts"
+          exit 1
+
+      - name: "Build and Push Cloud Run Job"
+        run: |-
+          DOCKER_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}-jobs:${{ github.sha }}"
+          docker build --tag "${DOCKER_TAG}" --file deployment/Dockerfile .  --target jobs
+          docker push "${DOCKER_TAG}"
+      - name: "Deploy to Cloud Run Job"
+        run: |
+          gcloud run jobs deploy "${{ env.SERVICE }}-job" \
+            --image "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}-jobs:${{ github.sha }}" \
+            --region "${{ env.REGION }}" \
+            --project "${{ env.PROJECT_ID }}" \
+            --update-env-vars "ALPACA_PAPER=${ALPACA_PAPER},ENV=${ENV},GCP_PROJECT_ID=${PROJECT_ID},GCP_BUCKET_NAME=${BUCKET_NAME}" \
+            --tasks 1 \
+            --max-retries 0 \
+            --memory 512Mi \
+            --cpu 1
