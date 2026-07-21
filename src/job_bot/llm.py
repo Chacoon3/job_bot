@@ -33,11 +33,13 @@ class OpenAILLMProvider(LLMProvider):
         temperature: float = 0.0,
         api_key: str | None = None,
         base_url: str | None = None,
+        parallel_tool_calls: bool | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
         self.api_key = api_key
         self.base_url = base_url
+        self.parallel_tool_calls = parallel_tool_calls
 
     def get_model(self) -> BaseChatModel:
         return cast(
@@ -47,6 +49,11 @@ class OpenAILLMProvider(LLMProvider):
                 temperature=self.temperature,
                 api_key=_resolve_secret(self.api_key, "OPENAI_API_KEY"),
                 base_url=self.base_url,
+                model_kwargs=(
+                    {"parallel_tool_calls": self.parallel_tool_calls}
+                    if self.parallel_tool_calls is not None
+                    else {}
+                ),
             ),
         )
 

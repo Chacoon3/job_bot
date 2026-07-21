@@ -20,7 +20,27 @@ class FakeFrame:
         self.name = name
         self.url = url
 
-    async def evaluate(self, expression: str, argument: int) -> list[dict[str, object]]:
+    async def evaluate(self, expression: str, argument: object) -> object:
+        if "interactiveSelectors" in expression:
+            assert argument == {"maxInteractive": 25, "maxTextChars": 2000}
+            return {
+                "title": "Software Engineer",
+                "heading": "Software Engineer",
+                "visible_text": "Software Engineer role description Apply now Job alerts",
+                "interactive": [
+                    {
+                        "text": "Apply now",
+                        "href": "https://apply.example.com",
+                        "selector": "#apply",
+                    }
+                ],
+                "forms": [
+                    {
+                        "action": "https://example.com/job-alerts",
+                        "context": "Get job alerts by email",
+                    }
+                ],
+            }
         assert "querySelectorAll('input, textarea, select, button')" in expression
         assert argument == 25
         return [
@@ -47,6 +67,7 @@ class FakePage:
         self.closed = False
         self.front = False
         self.timeout = 0
+        self.click_callback = None
 
     def is_closed(self) -> bool:
         return self.closed
@@ -59,6 +80,40 @@ class FakePage:
 
     async def bring_to_front(self) -> None:
         self.front = True
+
+    async def set_viewport_size(self, viewport: dict[str, int]) -> None:
+        self.viewport = viewport
+
+    def locator(self, selector: str) -> "FakePageLocator":
+        return FakePageLocator(self, selector)
+
+    async def wait_for_timeout(self, timeout: int) -> None:
+        assert timeout == 500
+
+    async def wait_for_load_state(self, state: str, timeout: int) -> None:
+        assert state == "domcontentloaded"
+        assert timeout == 10_000
+
+
+class FakePageLocator:
+    def __init__(self, page: FakePage, selector: str) -> None:
+        self.page = page
+        self.selector = selector
+
+    @property
+    def first(self) -> "FakePageLocator":
+        return self
+
+    async def scroll_into_view_if_needed(self) -> None:
+        return None
+
+    async def wait_for(self, state: str) -> None:
+        assert state == "visible"
+
+    async def click(self) -> None:
+        assert self.selector == "#apply"
+        if self.page.click_callback is not None:
+            self.page.click_callback()
 
 
 def _session_with_pages(*pages: FakePage) -> BrowserSession:
@@ -121,6 +176,59 @@ def test_frame_and_form_inspection_tools_return_structured_context() -> None:
     assert dom == '<form><input name="email"></form>'
 
 
+def test_page_inspection_distinguishes_apply_action_from_job_alert_form() -> None:
+    frame = FakeFrame("", "https://example.com/job")
+    page = FakePage("https://example.com/job", "Software Engineer", [frame])
+    tools = build_browser_tools(_session_with_pages(page))
+
+    snapshot = json.loads(
+        asyncio.run(
+            _tool(tools, "browser_inspect_page").ainvoke(
+                {"frame_index": 0, "max_interactive": 25, "max_text_chars": 2000}
+            )
+        )
+    )
+
+    assert snapshot["interactive"][0]["text"] == "Apply now"
+    assert snapshot["interactive"][0]["selector"] == "#apply"
+    assert snapshot["forms"][0]["context"] == "Get job alerts by email"
+    assert "click the relevant Apply control" in snapshot["guidance"]
+
+
+def test_click_apply_follows_new_application_tab() -> None:
+    frame = FakeFrame("", "https://example.com/job")
+    job_page = FakePage("https://example.com/job", "Job", [frame])
+    application_page = FakePage("https://apply.example.com", "Application", [frame])
+    session = _session_with_pages(job_page)
+    job_page.click_callback = lambda: session._context.pages.append(application_page)
+    tools = build_browser_tools(session)
+
+    result = json.loads(
+        asyncio.run(_tool(tools, "browser_click").ainvoke({"selector": "#apply"}))
+    )
+
+    assert result["opened_new_tab"] is True
+    assert result["url_after"] == "https://apply.example.com"
+    assert session.page() is application_page
+    assert application_page.front is True
+
+
+def test_viewport_tool_sets_stable_desktop_layout() -> None:
+    frame = FakeFrame("", "https://example.com/job")
+    page = FakePage("https://example.com/job", "Job", [frame])
+    session = _session_with_pages(page)
+    tools = build_browser_tools(session)
+
+    result = asyncio.run(
+        _tool(tools, "browser_set_viewport").ainvoke({"width": 1440, "height": 1200})
+    )
+
+    assert page.viewport == {"width": 1440, "height": 1200}
+    assert session.viewport_width == 1440
+    assert session.viewport_height == 1200
+    assert "browser_inspect_page" in result
+
+
 def test_page_recovers_to_latest_open_tab() -> None:
     frame = FakeFrame("", "https://example.com")
     closed = FakePage("https://example.com", "Closed", [frame])
@@ -130,3 +238,27 @@ def test_page_recovers_to_latest_open_tab() -> None:
 
     assert session.page() is open_page
 
+
+def test_stale_frame_index_returns_recoverable_error() -> None:
+    frame = FakeFrame("", "https://example.com/job")
+    page = FakePage("https://example.com/job", "Job", [frame])
+    tools = build_browser_tools(_session_with_pages(page))
+
+    result = json.loads(
+        asyncio.run(
+            _tool(tools, "browser_inspect_page").ainvoke(
+                {"frame_index": 1, "max_interactive": 25, "max_text_chars": 2000}
+            )
+        )
+    )
+
+    assert result["requested_frame_index"] == 1
+    assert result["available_frames"] == [
+        {
+            "index": 0,
+            "main": True,
+            "name": "",
+            "url": "https://example.com/job",
+        }
+    ]
+    assert "retry" in result["next_action"]

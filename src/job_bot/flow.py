@@ -10,7 +10,7 @@ from langchain.messages import HumanMessage
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
-from job_bot.applier import BrowserSession, build_browser_tools
+from job_bot.job_apply_tools import BrowserSession, build_browser_tools
 from job_bot.llm import OpenAILLMProvider
 from job_bot.openai_client import get_openai_client
 
@@ -147,23 +147,34 @@ async def apply_job(job_url: str, candidate: CandidateProfile) -> dict[str, obje
 
         try:
             tools = build_browser_tools(session)
-            model = OpenAILLMProvider().get_model()
+            model = OpenAILLMProvider(parallel_tool_calls=False).get_model()
             agent = create_agent(
                 model=model,
                 tools=tools,
                 system_prompt=(
-                    "You are a careful browser automation agent. Use only the supplied "
-                    "candidate data. Inspect the page before interacting, never invent "
-                    "answers, and report any missing required information. Before filling "
-                    "a form, use browser_list_tabs and browser_list_frames, then inspect "
-                    "the relevant frame with browser_inspect_form_controls. Use selectors "
-                    "returned by that tool instead of guessing selectors. If a click opens "
-                    "a new tab, list the tabs again and switch to the new tab. Use "
-                    "browser_read_dom only when the structured form inspection does not "
-                    "provide enough context. If the URL has expired, report it, do not "
-                    "apply, and return a message indicating the job posting is no longer "
-                    "available. Continue using the Playwright tools until the application "
-                    "is submitted or progress requires missing candidate information."
+                    "You are a careful browser automation agent. Use only supplied candidate "
+                    "data, never invent answers, and report missing required information. "
+                    "You MUST follow this observe-act-observe state machine and make only one "
+                    "browser tool call at a time:\n"
+                    "1. Open the requested URL, then call browser_inspect_page.\n"
+                    "2. Classify the current page. A job-description page is not an application "
+                    "form. On a JD page, find the relevant Apply/Apply now control in the "
+                    "interactive snapshot and click it. Never fill newsletter, job-alert, "
+                    "search, login, or mailing-list fields. The default viewport is a fixed "
+                    "1440x1200 desktop layout. If an expected control is hidden by responsive "
+                    "layout, inspect its hidden_reason and use browser_set_viewport to recheck "
+                    "another layout before concluding it is absent.\n"
+                    "3. After every click, navigation, or tab switch, call browser_inspect_page "
+                    "again with frame_index 0. If a new tab opened, the click tool selects it "
+                    "automatically. Frame indexes are temporary and must not be reused after "
+                    "the page changes.\n"
+                    "4. Only after the snapshot shows the actual job application workflow, "
+                    "list frames and inspect the relevant frame with "
+                    "browser_inspect_form_controls. Use only selectors returned by inspection.\n"
+                    "5. Fill one logical step, then inspect the page again before continuing. "
+                    "Use browser_read_dom only when structured inspection is insufficient.\n"
+                    "6. Review before submitting. Stop only after confirmed submission, an "
+                    "expired posting, a blocking login/CAPTCHA, or missing candidate data."
                 ),
             )
 
