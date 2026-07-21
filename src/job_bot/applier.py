@@ -77,7 +77,9 @@ class BrowserSession:
     def switch_page(self, index: int) -> Page:
         pages = self.pages()
         if index < 0 or index >= len(pages):
-            raise ValueError(f"Tab index {index} is out of range; available tabs: 0-{len(pages) - 1}")
+            raise ValueError(
+                f"Tab index {index} is out of range; available tabs: 0-{len(pages) - 1}"
+            )
         page = pages[index]
         if page.is_closed():
             raise RuntimeError(f"Tab {index} has already been closed")
@@ -249,7 +251,7 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             raise ValueError("max_controls must be between 1 and 500")
         frame = session.frame(frame_index)
         controls = await frame.evaluate(
-            """
+            r"""
             (maxControls) => {
               const clean = (value) => (value || '').replace(/\s+/g, ' ').trim();
               const quote = (value) => String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -271,16 +273,22 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
                 while (current && current.nodeType === Node.ELEMENT_NODE && parts.length < 5) {
                   const tag = current.tagName.toLowerCase();
                   const siblings = current.parentElement
-                    ? [...current.parentElement.children].filter((item) => item.tagName === current.tagName)
+                    ? [...current.parentElement.children].filter(
+                        (item) => item.tagName === current.tagName
+                      )
                     : [];
-                  const suffix = siblings.length > 1 ? `:nth-of-type(${siblings.indexOf(current) + 1})` : '';
+                  const suffix = siblings.length > 1
+                    ? `:nth-of-type(${siblings.indexOf(current) + 1})`
+                    : '';
                   parts.unshift(`${tag}${suffix}`);
                   current = current.parentElement;
                 }
                 return parts.join(' > ');
               };
               const labelFor = (element) => {
-                const nativeLabels = element.labels ? [...element.labels].map((label) => clean(label.innerText)) : [];
+                const nativeLabels = element.labels
+                  ? [...element.labels].map((label) => clean(label.innerText))
+                  : [];
                 const labelledBy = clean(element.getAttribute('aria-labelledby'))
                   .split(' ')
                   .filter(Boolean)
@@ -302,7 +310,9 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
                   aria_label: element.getAttribute('aria-label') || '',
                   role: element.getAttribute('role') || '',
                   autocomplete: element.getAttribute('autocomplete') || '',
-                  required: Boolean(element.required || element.getAttribute('aria-required') === 'true'),
+                  required: Boolean(
+                    element.required || element.getAttribute('aria-required') === 'true'
+                  ),
                   disabled: Boolean(element.disabled),
                   read_only: Boolean(element.readOnly),
                   visible: Boolean(element.getClientRects().length),
@@ -337,10 +347,12 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             raise ValueError("max_chars must be between 1 and 100000")
         frame = session.frame(frame_index)
         result = await frame.locator(selector).first.evaluate(
-            """
+            r"""
             (element) => {
               const clone = element.cloneNode(true);
-              clone.querySelectorAll('script, style, noscript, svg').forEach((node) => node.remove());
+              clone.querySelectorAll('script, style, noscript, svg').forEach(
+                (node) => node.remove()
+              );
               clone.querySelectorAll('input, textarea').forEach((node) => {
                 node.removeAttribute('value');
                 if (node.tagName === 'TEXTAREA') node.textContent = '';
