@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import os
-import re
 from datetime import datetime
+from logging import getLogger
 from typing import Literal
 
 from langchain.agents import create_agent
 from langchain.messages import HumanMessage
 from playwright.async_api import async_playwright
-from playwright.sync_api import sync_playwright
 from pydantic import BaseModel, Field
 
-from job_bot.applier import build_browser_tools
+from job_bot.applier import BrowserSession, build_browser_tools
 from job_bot.llm import OpenAILLMProvider
 from job_bot.openai_client import get_openai_client
 
@@ -85,147 +84,6 @@ Rules:
 """.strip()
 
 
-def _sync_playwright_session() -> object:
-    return sync_playwright()
-
-
-def _keyword_pattern(keywords: list[str]) -> re.Pattern[str]:
-    escaped = [re.escape(keyword) for keyword in keywords if keyword]
-    if not escaped:
-        escaped = [r".*"]
-    return re.compile("|".join(escaped), re.IGNORECASE)
-
-
-def _try_action(locator: object, value: str | None = None, allow_check: bool = False) -> bool:
-    if value is not None:
-        for method_name, method_args in (
-            ("fill", (value,)),
-            (
-                "select_option",
-                (),
-            ),
-        ):
-            method = getattr(locator, method_name, None)
-            if not callable(method):
-                continue
-
-            try:
-                if method_name == "select_option":
-                    method(label=value)
-                else:
-                    method(*method_args)
-                return True
-            except Exception:
-                continue
-
-    for method_name in (("check", "click") if allow_check else ("click",)):
-        method = getattr(locator, method_name, None)
-        if not callable(method):
-            continue
-
-        try:
-            method()
-            return True
-        except Exception:
-            continue
-
-    return False
-
-
-def _fill_field(page: object, keywords: list[str], value: str) -> bool:
-    pattern = _keyword_pattern(keywords)
-    locators = [
-        page.get_by_label(pattern),
-        page.get_by_placeholder(pattern),
-        page.get_by_role("textbox", name=pattern),
-        page.get_by_role("combobox", name=pattern),
-    ]
-    for locator in locators:
-        first_locator = getattr(locator, "first", locator)
-        if _try_action(first_locator, value):
-            return True
-    return False
-
-
-def _click_match(page: object, role_names: list[str], keywords: list[str]) -> bool:
-    pattern = _keyword_pattern(keywords)
-    for role_name in role_names:
-        locator = page.get_by_role(role_name, name=pattern)
-        first_locator = getattr(locator, "first", locator)
-        if _try_action(first_locator, allow_check=role_name in {"radio", "checkbox"}):
-            return True
-    return False
-
-
-def _maybe_click_common_controls(page: object) -> None:
-    for keywords in (
-        ["Accept all"],
-        ["Accept"],
-        ["I agree"],
-        ["Agree"],
-        ["Close"],
-        ["Got it"],
-    ):
-        _click_match(page, ["button", "link"], keywords)
-
-
-def _education_summary(candidate: CandidateProfile) -> str:
-    lines: list[str] = []
-    for degree in candidate.education:
-        lines.append(
-            f"{degree.degree} in {degree.field_of_study} at {degree.institution} "
-            f"({degree.duration.minimum}-{degree.duration.maximum}), GPA {degree.gpa}"
-        )
-    return "\n".join(lines)
-
-
-def _apply_candidate_details(page: object, candidate: CandidateProfile) -> None:
-    field_values = [
-        (["name", "full name", "legal name"], candidate.name),
-        (["email", "e-mail"], candidate.email),
-        (["phone", "mobile", "telephone"], candidate.phone),
-        (["linkedin", "linkedin url", "linkedin profile"], candidate.linkedin_url),
-        (["github", "github url", "github profile"], candidate.github_url),
-        (["portfolio", "portfolio url", "website", "personal website"], candidate.portfolio_url),
-        (["resume", "cv", "cover letter", "summary", "about you"], candidate.resume_text),
-        (
-            ["education", "school", "university", "degree", "qualification"],
-            _education_summary(candidate),
-        ),
-    ]
-
-    for keywords, value in field_values:
-        if value:
-            _fill_field(page, keywords, value)
-
-    sponsorship_keywords = [
-        "visa sponsorship",
-        "sponsorship",
-        "work authorization",
-        "work authorization status",
-    ]
-    sponsorship_answer = (
-        ["yes", "required", "need sponsorship"]
-        if candidate.require_sponsorship
-        else ["no", "not required", "no sponsorship"]
-    )
-    _click_match(page, ["radio", "checkbox", "button"], sponsorship_keywords + sponsorship_answer)
-
-
-def _submit_application(page: object) -> bool:
-    for keywords in (
-        ["submit application"],
-        ["submit"],
-        ["apply now"],
-        ["apply"],
-        ["send application"],
-        ["finish"],
-    ):
-        if _click_match(page, ["button", "link"], keywords):
-            return True
-    return False
-
-
 def _build_search_prompt(query: JobQuery) -> str:
     min_pay, max_pay = query.pay_range.minimum, query.pay_range.maximum
     extra = ", ".join(query.extra_criteria or []) or "None"
@@ -281,27 +139,51 @@ def find_jobs(query: JobQuery) -> list[JobEntry]:
     return structured.jobs
 
 
-async def _apply_job(job: JobEntry, candidate: CandidateProfile) -> None:
+async def apply_job(job_url: str, candidate: CandidateProfile) -> dict[str, object]:
+    """Run one browser-agent application attempt in an isolated browser context."""
     async with async_playwright() as playwright:
-        tools = build_browser_tools(playwright)
-        model = OpenAILLMProvider().get_model()
-        model.bind_tools(tools)
-        agent = create_agent(model=model, tools=tools)
-        agent.invoke([HumanMessage(content=f"""
-Apply to the job at {job.url} with the following candidate profile: {candidate}.
-Fill the application form, upload the resume, and submit the application.
-""")])
+        session = BrowserSession(playwright=playwright, headless=False)
+        await session.start()
+
+        try:
+            tools = build_browser_tools(session)
+            model = OpenAILLMProvider().get_model()
+            agent = create_agent(
+                model=model,
+                tools=tools,
+                system_prompt=(
+                    "You are a careful browser automation agent. Use only the supplied "
+                    "candidate data. Inspect the page before interacting, never invent "
+                    "answers, and report any missing required information."
+                    "If the url has expired, report it, do not apply, and return a message indicating the job posting is no longer available."
+                    "You should utilize Playwright's capabilities to inspect the page and do interactions till the application is submitted."
+                ),
+            )
+
+            prompt = (
+                f"Open and apply to the job at {job_url}.\n\n"
+                "Candidate profile:\n"
+                f"{candidate.model_dump_json(indent=2)}\n\n"
+                "Fill the application form using the candidate profile. Upload a resume "
+                "only when a valid local resume file path is explicitly available in the "
+                "profile or task context. Review the completed form before submitting."
+            )
+            return await agent.ainvoke(
+                {"messages": [HumanMessage(content=prompt)]},
+            )
+        finally:
+            await session.stop()
 
 
 async def apply_jobs(query: JobQuery, candidate: CandidateProfile) -> list[ApplicationStatus]:
     jobs = find_jobs(query)
-    status = []
+    status: list[ApplicationStatus] = []
     for job in jobs:
-        # Simulate applying to the job (this is a placeholder for actual application logic)
         try:
-            await _apply_job(job, candidate)
-        except Exception as e:
-            status.append(ApplicationStatus(job=job, status="failed", message=str(e)))
+            resp = await apply_job(job.url, candidate)
+            getLogger().info(resp)
+        except Exception as exc:
+            status.append(ApplicationStatus(job=job, status="failed", message=str(exc)))
             continue
         status.append(ApplicationStatus(job=job, status="applied"))
 
