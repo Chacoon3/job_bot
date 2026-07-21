@@ -26,6 +26,7 @@ dependencies = [
   "google-cloud-storage==3.3.1",
   "google-cloud-secret-manager==2.24.0",
   "networkx",
+  "python-multipart",
 ]
 
 [project.optional-dependencies]

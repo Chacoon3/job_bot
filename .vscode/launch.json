@@ -2,6 +2,19 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Debug main.py",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/job_bot/main.py",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
       "name": "Debug API (Uvicorn)",
       "type": "python",
       "request": "launch",
@@ -19,7 +32,8 @@
         "PYTHONPATH": "${workspaceFolder}/src"
       },
       "jinja": true,
-      "justMyCode": true
+      "justMyCode": true,
+      "envFile": "${workspaceFolder}/.env"
     }
   ]
 }

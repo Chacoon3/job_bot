@@ -1,49 +1,20 @@
-from datetime import datetime, timedelta
+import asyncio
+import sys
 
-from fastapi import FastAPI
-
-from job_bot.flow import Interval, JobEntry, JobQuery, apply_jobs, find_jobs
-
-app = FastAPI(title="job_bot", version="0.1.0")
+import uvicorn
 
 
-@app.get("/")
-def root() -> dict[str, str]:
-    return {"service": "job_bot", "status": "ok"}
+def main() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-
-@app.get("/healthz")
-def healthz() -> dict[str, str]:
-    return {"status": "healthy"}
-
-
-@app.get("/test/find_jobs")
-def test_find_jobs() -> list[JobEntry]:
-
-    criteria = JobQuery(
-        job_title="Software Engineer",
-        year_of_experience=Interval(minimum=1, maximum=4),
-        job_location="United States",
-        pay_range=Interval(minimum=130000, maximum=180000),
-        key_words=["Python", "C#", "Cloud", "Agents", "LangChain", "Backend"],
-        posted_since=datetime.now() - timedelta(days=30),
+    uvicorn.run(
+        "job_bot.api:app",
+        host="127.0.0.1",
+        port=8080,
+        reload=False,
     )
 
-    jobs = find_jobs(criteria)
-    return jobs
 
-
-@app.get("/test/apply_jobs")
-def test_apply_jobs() -> list[JobEntry]:
-
-    criteria = JobQuery(
-        job_title="Software Engineer",
-        year_of_experience=Interval(minimum=1, maximum=4),
-        job_location="United States",
-        pay_range=Interval(minimum=130000, maximum=180000),
-        key_words=["Python", "C#", "Cloud", "Agents", "LangChain", "Backend"],
-        posted_since=datetime.now() - timedelta(days=30),
-    )
-
-    jobs = apply_jobs(criteria)
-    return jobs
+if __name__ == "__main__":
+    main()

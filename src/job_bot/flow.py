@@ -3,10 +3,17 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime
+from typing import Literal
 
-from openai import OpenAI
+from langchain.agents import create_agent
+from langchain.messages import HumanMessage
+from playwright.async_api import async_playwright
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel, Field
+
+from job_bot.applier import build_browser_tools
+from job_bot.llm import OpenAILLMProvider
+from job_bot.openai_client import get_openai_client
 
 
 class Interval(BaseModel):
@@ -32,6 +39,7 @@ class CandidateProfile(BaseModel):
     education: list[EducationDegree]
     resume_text: str
     require_sponsorship: bool = False
+    summary: str
 
 
 class JobEntry(BaseModel):
@@ -55,6 +63,12 @@ class JobQuery(BaseModel):
     num_limit: int = 10
 
 
+class ApplicationStatus(BaseModel):
+    job: JobEntry
+    status: Literal["applied", "failed"]
+    message: str | None = None
+
+
 class JobSearchResponse(BaseModel):
     jobs: list[JobEntry] = Field(default_factory=list)
 
@@ -71,13 +85,6 @@ Rules:
 """.strip()
 
 
-def _require_env_var(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return value
-
-
 def _sync_playwright_session() -> object:
     return sync_playwright()
 
@@ -91,7 +98,13 @@ def _keyword_pattern(keywords: list[str]) -> re.Pattern[str]:
 
 def _try_action(locator: object, value: str | None = None, allow_check: bool = False) -> bool:
     if value is not None:
-        for method_name, method_args in (("fill", (value,)), ("select_option", (),)):
+        for method_name, method_args in (
+            ("fill", (value,)),
+            (
+                "select_option",
+                (),
+            ),
+        ):
             method = getattr(locator, method_name, None)
             if not callable(method):
                 continue
@@ -229,6 +242,7 @@ def _build_search_prompt(query: JobQuery) -> str:
         "- Prefer high-tech and fortune 500 companies. Do not include jobs from staffing "
         "agencies or small unknown companies.\n"
         "- If a role has no explicit pay range, do not include it.\n"
+        "- Only include jobs that are posted on the company's own official career website. Do not include jobs from job boards or aggregators.\n"
         "- Do not include jobs from startup companies or companies with less than 100 employees.\n"
         f"- Extra criteria: {extra}\n\n"
         "For each matching role, include:\n"
@@ -239,9 +253,8 @@ def _build_search_prompt(query: JobQuery) -> str:
 
 
 def find_jobs(query: JobQuery) -> list[JobEntry]:
-    api_key = _require_env_var("OPENAI_API_KEY")
     model_name = os.getenv("JOB_BOT_LLM_MODEL", "gpt-5.4-nano")
-    client = OpenAI(api_key=api_key)
+    client = get_openai_client()
     prompt = _build_search_prompt(query)
     response = client.responses.parse(
         model=model_name,
@@ -268,53 +281,28 @@ def find_jobs(query: JobQuery) -> list[JobEntry]:
     return structured.jobs
 
 
-def _apply_job(job: JobEntry, candidate: CandidateProfile) -> None:
-    with _sync_playwright_session() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1440, "height": 2000})
-        page = context.new_page()
-
-        try:
-            page.goto(job.url, wait_until="domcontentloaded", timeout=60000)
-            try:
-                page.wait_for_load_state("networkidle", timeout=5000)
-            except Exception:
-                pass
-
-            _maybe_click_common_controls(page)
-            _click_match(
-                page,
-                ["button", "link"],
-                ["apply now", "apply", "start application", "continue"],
-            )
-
-            for _ in range(4):
-                _apply_candidate_details(page, candidate)
-                if _submit_application(page):
-                    return
-                if not _click_match(
-                    page,
-                    ["button", "link"],
-                    ["next", "continue", "review", "save and continue"],
-                ):
-                    break
-
-            raise RuntimeError(f"Could not complete the application flow for {job.url}")
-        finally:
-            context.close()
-            browser.close()
+async def _apply_job(job: JobEntry, candidate: CandidateProfile) -> None:
+    async with async_playwright() as playwright:
+        tools = build_browser_tools(playwright)
+        model = OpenAILLMProvider().get_model()
+        model.bind_tools(tools)
+        agent = create_agent(model=model, tools=tools)
+        agent.invoke([HumanMessage(content=f"""
+Apply to the job at {job.url} with the following candidate profile: {candidate}.
+Fill the application form, upload the resume, and submit the application.
+""")])
 
 
-def apply_jobs(query: JobQuery, candidate: CandidateProfile) -> list[JobEntry]:
+async def apply_jobs(query: JobQuery, candidate: CandidateProfile) -> list[ApplicationStatus]:
     jobs = find_jobs(query)
-    applied_jobs = []
+    status = []
     for job in jobs:
         # Simulate applying to the job (this is a placeholder for actual application logic)
         try:
-            _apply_job(job, candidate)
+            await _apply_job(job, candidate)
         except Exception as e:
-            print(f"Failed to apply for job {job.job_title} at {job.company_name}: {e}")
+            status.append(ApplicationStatus(job=job, status="failed", message=str(e)))
             continue
-        applied_jobs.append(job)
+        status.append(ApplicationStatus(job=job, status="applied"))
 
-    return applied_jobs
+    return status
