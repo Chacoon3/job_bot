@@ -49,6 +49,7 @@ class JobEntry(BaseModel):
     job_location: str
     jd_summary: str
     pay_range: Interval
+    date_posted: datetime | None = None
 
 
 class JobQuery(BaseModel):
@@ -81,6 +82,7 @@ Rules:
 - Focus on real jobs with direct posting URLs.
 - Prefer jobs that match title, location, experience, and tech stack.
 - Return only factual information supported by the sources.
+- Ensure the job is currently open and accepting applications. Verify by inspecting the web page to see if there is any apply button or form. If the job is closed, expired, or not accepting applications, do not include it.
 """.strip()
 
 
@@ -89,8 +91,8 @@ def _build_search_prompt(query: JobQuery) -> str:
     extra = ", ".join(query.extra_criteria or []) or "None"
     stack = ", ".join(query.key_words)
     return (
-        f"Find at most {query.num_limit} job opportunities that match these criteria:\n"
-        f"- Job title: {query.job_title}\n"
+        f"Find at most {query.num_limit} job opportunities that match some or all of these criteria:\n"
+        f"- Job title (need not to be identical to the query): {query.job_title}\n"
         f"- Years of experience: {query.year_of_experience.minimum} to "
         f"{query.year_of_experience.maximum}\n"
         f"- Location: {query.job_location}\n"
@@ -100,9 +102,11 @@ def _build_search_prompt(query: JobQuery) -> str:
         "- Prefer high-tech and fortune 500 companies. Do not include jobs from staffing "
         "agencies or small unknown companies.\n"
         "- If a role has no explicit pay range, do not include it.\n"
-        "- Only include jobs that are posted on the company's own official career website. Do not include jobs from job boards or aggregators.\n"
+        "- Only include opening jobs that are posted on the company's own official career website. Do not include jobs from job boards or aggregators.\n"
         "- Do not include jobs from startup companies or companies with less than 100 employees.\n"
         f"- Extra criteria: {extra}\n\n"
+        if extra
+        else ""
         "For each matching role, include:\n"
         "- job_title\n- url\n- year_of_experience\n- company_name\n"
         "- job_location\n- jd_summary\n- pay_range\n\n"

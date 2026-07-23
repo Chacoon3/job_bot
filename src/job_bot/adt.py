@@ -74,6 +74,7 @@ class ApplicationStage(str, Enum):
 class JobAgentState(BaseModel):
     """State of the application agent, including the current page type and application stage."""
 
+    job_url: str
     messages: Annotated[list[AnyMessage], add_messages]
     application_stage: ApplicationStage
     job_page_type: JobPageType

@@ -5,28 +5,22 @@ from langchain.tools import BaseTool
 from langgraph.runtime import Runtime
 
 from job_bot.adt import JobAgentContext, JobAgentState, JobPageType
-from job_bot.llm import OpenAILLMProvider
 
 
-def init_browser_session(state: JobAgentState, runtime: Runtime[JobAgentContext]) -> JobAgentState:
+def should_invoke_tool(state: JobAgentState) -> bool:
     """
-    Initialize a browser session for the application agent.
+    Determine if the last message in the state contains a tool call.
 
     Args:
         state (JobAgentState): The current state of the application agent.
-        runtime (Runtime[JobAgentContext]): The runtime context containing the browser session.
-
     Returns:
-        JobAgentState: The updated state with the initialized browser session.
-    """
-    if runtime.context.browser_session is None:
-        raise RuntimeError("Browser session is not initialized in the runtime context.")
 
-    return JobAgentState(
-        messages=[],
-        application_stage=state.application_stage,
-        job_page_type=state.job_page_type,
-    )
+        bool: True if the last message contains a tool call, False otherwise.
+    """
+    if not state.messages:
+        return False
+    last_message = state.messages[-1]
+    return isinstance(last_message, AIMessage) and bool(last_message.tool_calls)
 
 
 def tool_call_node(state: JobAgentState, tools: Sequence[BaseTool]) -> JobAgentState:
@@ -46,6 +40,35 @@ def tool_call_node(state: JobAgentState, tools: Sequence[BaseTool]) -> JobAgentS
     )
 
 
+def open_job_page(state: JobAgentState, runtime: Runtime[JobAgentContext]) -> JobAgentState:
+    """
+    Open the job URL in the browser session.
+
+    Args:
+        state (JobAgentState): The current state of the application agent.
+        runtime (Runtime[JobAgentContext]): The runtime context containing the browser session.
+
+    Returns:
+        JobAgentState: The updated state after opening the job URL.
+    """
+    if not runtime.context.browser_session:
+        raise RuntimeError("Browser session is not initialized in the state.")
+
+    browser_session = runtime.context.browser_session
+    job_url = state.job_url
+
+    if not job_url:
+        raise RuntimeError("No job URL found in the state messages.")
+
+    browser_session.start(job_url)
+
+    return JobAgentState(
+        messages=state.messages + [AIMessage(content=f"Navigated to {job_url}")],
+        application_stage=state.application_stage,
+        job_page_type=state.job_page_type,
+    )
+
+
 def infer_page_type(state: JobAgentState, runtime: Runtime[JobAgentContext]) -> JobAgentState:
     """
     Infer the current page type based on the application agent state.
@@ -56,11 +79,10 @@ def infer_page_type(state: JobAgentState, runtime: Runtime[JobAgentContext]) -> 
     Returns:
         JobAgentState: The updated state with the inferred page type.
     """
-    model = OpenAILLMProvider(parallel_tool_calls=False).get_model()
+    model = runtime.context.model
     browser_tools = runtime.context.browser_tools
     if not browser_tools:
         raise RuntimeError("Browser tools are not initialized in the state.")
-    model.bind_tools(browser_tools)
     structured = model.with_structured_output(JobPageType)
 
     prompts = [
@@ -127,58 +149,6 @@ def infer_application_stage(
     )
 
 
-def _start_application(state: JobAgentState, runtime: Runtime[JobAgentContext]) -> JobAgentState:
-    """
-    Start the application process based on the application agent state.
-
-    Args:
-        state (JobAgentState): The current state of the application agent.
-
-    """
-    # Implement application starting logic here
-    return state
-
-
-def _login(state: JobAgentState, runtime: Runtime[JobAgentContext]) -> JobAgentState:
-    """
-    Perform login actions based on the application agent state.
-
-    Args:
-        state (JobAgentState): The current state of the application agent.
-
-    """
-    # Implement login logic here
-    return state
-
-
-def _fill_application_page(
-    state: JobAgentState, runtime: Runtime[JobAgentContext]
-) -> JobAgentState:
-    """
-    Fill out the application form based on the application agent state.
-
-    Args:
-        state (JobAgentState): The current state of the application agent.
-
-    """
-    # Implement application form filling logic here
-    return state
-
-
-def _check_application_error(
-    state: JobAgentState, runtime: Runtime[JobAgentContext]
-) -> JobAgentState:
-    """
-    Check for any errors in the application submission based on the application agent state.
-
-    Args:
-        state (JobAgentState): The current state of the application agent.
-
-    """
-    # Implement error checking logic here
-    return state
-
-
 def complete_page(state: JobAgentState, runtime: Runtime[JobAgentContext]) -> JobAgentState:
     """
     Do things to complete the tasks to be done on the current page based on the application agent state.
@@ -186,18 +156,46 @@ def complete_page(state: JobAgentState, runtime: Runtime[JobAgentContext]) -> Jo
     Args:
         state (JobAgentState): The current state of the application agent.
 
+    Returns:
+        JobAgentState: The updated state after completing the page tasks.
     """
 
-    page_prompt_map = {
-        JobPageType.JOB_DESCRIPTION: "You are on a job description page. Your task is to find the relevant Apply/Apply now control in the interactive snapshot and click it.",
-        JobPageType.ACCOUNT_LOGIN: "You are on an account login page. Your task is to fill in the login credentials and submit the form.",
-        JobPageType.APPLICATION_FORM: "You are on an application form page. Your task is to fill out the application form with the candidate's information and submit it.",
-        JobPageType.UNKNOWN: "You are on an unknown page type. Your task is to check for any errors or issues that may have occurred during the application process.",
+    page_prompt_map: dict[JobPageType, str] = {
+        JobPageType.JOB_DESCRIPTION: (
+            "Inspect the current page and confirm that it is the intended job description."
+            "Find the Apply or Apply now control associated with this job; ignore job-alert, newsletter, search, and unrelated sign-up controls."
+            "Click the application control, then inspect the resulting page or newly opened tab before taking another action."
+        ),
+        JobPageType.ACCOUNT_LOGIN: (
+            "Inspect the login form and identify its required fields and available sign-in options."
+            "Use only credentials explicitly supplied in the conversation or runtime context; never invent credentials."
+            "Fill the matching email, username, and password fields, submit the form, and inspect the resulting page."
+            "If credentials are unavailable, a CAPTCHA or multi-factor challenge appears, or login fails, stop and clearly report the blocker.",
+        ),
+        JobPageType.APPLICATION_FORM: (
+            "Inspect the application form, including all steps, required fields, validation messages, and relevant embedded frames."
+            "Complete each field using only the supplied candidate profile; never guess or invent candidate information."
+            "Upload a resume only when an explicit, valid resume file path is available, and do not agree to optional marketing communications."
+            "After each logical form step, inspect the page again and correct validation errors before continuing."
+            "Review all entered information, submit the application, and verify that the page shows a clear submission confirmation."
+            "If required information is missing, a CAPTCHA or other human-verification challenge appears, or submission cannot be confirmed, stop and report exactly what is blocking completion.",
+        ),
+        JobPageType.UNKNOWN: (
+            "Inspect the current page, its visible messages, interactive controls, URL, and any relevant embedded frames."
+            "Determine whether the page is a loading state, confirmation page, expired posting, access error, validation error, CAPTCHA, or an unrecognized application step."
+            "Take only an action that is clearly supported by the inspected page and advances the existing job application; do not click unrelated controls or enter invented data."
+            "Inspect the page after the action. If no safe next action is clear, stop and report the page state and blocker.",
+        ),
     }
 
-    user_prompt = page_prompt_map.get(state.job_page_type)
-    if user_prompt is None:
+    page_prompts = page_prompt_map.get(state.job_page_type)
+    if page_prompts is None:
         raise RuntimeError(f"Unknown page type: {state.job_page_type}")
-
-    if runtime.context.model is None:
-        model = OpenAILLMProvider(parallel_tool_calls=False).get_model()
+    user_prompt = HumanMessage(content=page_prompts)
+    model = runtime.context.model
+    resp = model.invoke(state.messages + [user_prompt])
+    return JobAgentState(
+        messages=[resp],
+        application_stage=state.application_stage,
+        job_page_type=state.job_page_type,
+    )
