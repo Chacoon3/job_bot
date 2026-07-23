@@ -3,6 +3,7 @@ from __future__ import annotations
 from enum import Enum, unique
 from typing import Annotated, Optional
 
+from langchain.chat_models import BaseChatModel
 from langchain.messages import AnyMessage
 from langgraph.graph import add_messages
 from pydantic import BaseModel
@@ -81,3 +82,4 @@ class JobAgentState(BaseModel):
 class JobAgentContext(BaseModel):
     browser_session: Optional[BrowserSession] = None
     browser_tools: Optional[list] = None
+    model: Optional[BaseChatModel] = None

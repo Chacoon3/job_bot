@@ -1,8 +1,49 @@
-from langchain.messages import AIMessage, HumanMessage, SystemMessage
+from typing import Sequence
+
+from langchain.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain.tools import BaseTool
 from langgraph.runtime import Runtime
 
 from job_bot.adt import JobAgentContext, JobAgentState, JobPageType
 from job_bot.llm import OpenAILLMProvider
+
+
+def init_browser_session(state: JobAgentState, runtime: Runtime[JobAgentContext]) -> JobAgentState:
+    """
+    Initialize a browser session for the application agent.
+
+    Args:
+        state (JobAgentState): The current state of the application agent.
+        runtime (Runtime[JobAgentContext]): The runtime context containing the browser session.
+
+    Returns:
+        JobAgentState: The updated state with the initialized browser session.
+    """
+    if runtime.context.browser_session is None:
+        raise RuntimeError("Browser session is not initialized in the runtime context.")
+
+    return JobAgentState(
+        messages=[],
+        application_stage=state.application_stage,
+        job_page_type=state.job_page_type,
+    )
+
+
+def tool_call_node(state: JobAgentState, tools: Sequence[BaseTool]) -> JobAgentState:
+    registry: dict[str, BaseTool] = {tool.name: tool for tool in tools}
+    tool_msgs = []
+    for tool_call in state.messages[-1].tool_calls:
+        tool = registry.get(tool_call["name"])
+        if tool is None:
+            raise ValueError(f"Tool call '{tool_call['name']}' is not supported")
+        observation = tool.invoke(tool_call["args"])
+        tool_msgs.append(ToolMessage(content=observation, tool_call_id=tool_call["id"]))
+
+    return JobAgentState(
+        messages=tool_msgs,
+        application_stage=state.application_stage,
+        job_page_type=state.job_page_type,
+    )
 
 
 def infer_page_type(state: JobAgentState, runtime: Runtime[JobAgentContext]) -> JobAgentState:
@@ -147,13 +188,16 @@ def complete_page(state: JobAgentState, runtime: Runtime[JobAgentContext]) -> Jo
 
     """
 
-    page_to_action_map = {
-        JobPageType.JOB_DESCRIPTION: _start_application,
-        JobPageType.ACCOUNT_LOGIN: _login,
-        JobPageType.APPLICATION_FORM: _fill_application_page,
-        JobPageType.UNKNOWN: _check_application_error,
+    page_prompt_map = {
+        JobPageType.JOB_DESCRIPTION: "You are on a job description page. Your task is to find the relevant Apply/Apply now control in the interactive snapshot and click it.",
+        JobPageType.ACCOUNT_LOGIN: "You are on an account login page. Your task is to fill in the login credentials and submit the form.",
+        JobPageType.APPLICATION_FORM: "You are on an application form page. Your task is to fill out the application form with the candidate's information and submit it.",
+        JobPageType.UNKNOWN: "You are on an unknown page type. Your task is to check for any errors or issues that may have occurred during the application process.",
     }
-    action = page_to_action_map.get(state.job_page_type)
-    if action:
-        return action(state, runtime)
-    return state
+
+    user_prompt = page_prompt_map.get(state.job_page_type)
+    if user_prompt is None:
+        raise RuntimeError(f"Unknown page type: {state.job_page_type}")
+
+    if runtime.context.model is None:
+        model = OpenAILLMProvider(parallel_tool_calls=False).get_model()
