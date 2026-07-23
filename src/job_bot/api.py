@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, Request
 
 from job_bot.db.app_redis import AppRedisAsync
-from job_bot.file_upload import parse_pure_text_pdf
 from job_bot.flow import (
     ApplicationStatus,
     CandidateProfile,
@@ -16,6 +15,7 @@ from job_bot.flow import (
     find_jobs,
 )
 from job_bot.resume_parser import parse_resume
+from job_bot.utils.file_upload import parse_pure_text_pdf
 
 app = FastAPI(title="job_bot", version="0.1.0")
 

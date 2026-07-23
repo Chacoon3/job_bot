@@ -10,9 +10,9 @@ from langchain.messages import HumanMessage
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
-from job_bot.job_apply_tools import BrowserSession, build_browser_tools
 from job_bot.llm import OpenAILLMProvider
 from job_bot.openai_client import get_openai_client
+from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 
 
 class Interval(BaseModel):
