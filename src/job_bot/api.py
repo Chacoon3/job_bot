@@ -25,13 +25,13 @@ def root() -> dict[str, str]:
     return {"service": "job_bot", "status": "ok"}
 
 
-@app.get("/healthz")
-def healthz() -> dict[str, str]:
+@app.get("/health")
+def health() -> dict[str, str]:
     return {"status": "healthy"}
 
 
-@app.get("/test/find_jobs")
-def test_find_jobs() -> list[JobEntry]:
+@app.get("/api/find_jobs")
+def api_find_jobs() -> list[JobEntry]:
 
     criteria = JobQuery(
         job_title="Software Engineer",
@@ -46,7 +46,7 @@ def test_find_jobs() -> list[JobEntry]:
     return jobs
 
 
-@app.post("/candidate_profile")
+@app.post("/api/candidate_profile")
 async def candidate_profile(request: Request) -> dict[str, str]:
     form = await request.form()
     uploaded_file = form.get("file")
@@ -68,8 +68,8 @@ async def candidate_profile(request: Request) -> dict[str, str]:
     return {"profile": str(profile)}
 
 
-@app.post("/test/apply")
-async def test_apply(request: Request) -> ApplicationStatus:
+@app.post("/api/apply")
+async def api_apply(request: Request) -> ApplicationStatus:
     form = await request.form()
     uploaded_file = form.get("file")
     job_url = form.get("job_url")
@@ -107,8 +107,8 @@ async def test_apply(request: Request) -> ApplicationStatus:
     return status
 
 
-@app.post("/test/find_and_apply")
-async def test_apply_jobs(request: Request) -> list[ApplicationStatus]:
+@app.post("/api/find_and_apply")
+async def api_apply_jobs(request: Request) -> list[ApplicationStatus]:
 
     criteria = JobQuery(
         job_title="Software Engineer",

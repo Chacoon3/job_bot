@@ -86,22 +86,22 @@ Rules:
 """.strip()
 
 
-def _build_search_prompt(query: JobQuery) -> str:
+def _build_job_search_prompt(query: JobQuery) -> str:
     min_pay, max_pay = query.pay_range.minimum, query.pay_range.maximum
     extra = ", ".join(query.extra_criteria or []) or "None"
     stack = ", ".join(query.key_words)
     return (
-        f"Find at most {query.num_limit} job opportunities that match some or all of these criteria:\n"
-        f"- Job title (need not to be identical to the query): {query.job_title}\n"
+        f"Find job opportunities (at most {query.num_limit}) that match some or all of these criteria:\n"
+        f"- Job title (need not be identical to the query): {query.job_title}\n"
         f"- Years of experience: {query.year_of_experience.minimum} to "
         f"{query.year_of_experience.maximum}\n"
         f"- Location: {query.job_location}\n"
-        f"- Pay range target: {min_pay} to {max_pay}\n"
+        f"- Pay range overlapping with candidate's expectation: {min_pay} to {max_pay}\n"
         f"- Key words (match any): {stack}\n"
-        f"- Posted since: {query.posted_since or 'Any time'}\n"
+        f"- Posted no earlier than: {query.posted_since or 'Any time'}\n"
         "- Prefer high-tech and fortune 500 companies. Do not include jobs from staffing "
         "agencies or small unknown companies.\n"
-        "- If a role has no explicit pay range, do not include it.\n"
+        "- If a role has no pay range, do not include it.\n"
         "- Only include opening jobs that are posted on the company's own official career website. Do not include jobs from job boards or aggregators.\n"
         "- Do not include jobs from startup companies or companies with less than 100 employees.\n"
         f"- Extra criteria: {extra}\n\n"
@@ -117,7 +117,7 @@ def _build_search_prompt(query: JobQuery) -> str:
 def find_jobs(query: JobQuery) -> list[JobEntry]:
     model_name = os.getenv("JOB_BOT_LLM_MODEL", "gpt-5.4-nano")
     client = get_openai_client()
-    prompt = _build_search_prompt(query)
+    prompt = _build_job_search_prompt(query)
     response = client.responses.parse(
         model=model_name,
         input=[
