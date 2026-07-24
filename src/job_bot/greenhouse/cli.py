@@ -4,9 +4,9 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from job_bot.greenhouse_discovery.io import write_csv, write_json
-from job_bot.greenhouse_discovery.models import DiscoveryConfig
-from job_bot.greenhouse_discovery.service import GreenhouseGlobalDiscoverer
+from job_bot.greenhouse.io import write_csv, write_json
+from job_bot.greenhouse.models import DiscoveryConfig
+from job_bot.greenhouse.service import GreenhouseGlobalDiscoverer
 
 
 def parser() -> argparse.ArgumentParser:
