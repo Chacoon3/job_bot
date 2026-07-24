@@ -4,9 +4,12 @@ import asyncio
 
 import httpx
 
-from greenhouse_discovery.commoncrawl import CommonCrawlClient
-from greenhouse_discovery.greenhouse import BoardNameEnricher, GreenhouseVerifier
-from greenhouse_discovery.models import (
+from job_bot.greenhouse_discovery.commoncrawl import CommonCrawlClient
+from job_bot.greenhouse_discovery.greenhouse import (
+    BoardNameEnricher,
+    GreenhouseVerifier,
+)
+from job_bot.greenhouse_discovery.models import (
     DiscoveredBoard,
     DiscoveryConfig,
     DiscoveryReport,

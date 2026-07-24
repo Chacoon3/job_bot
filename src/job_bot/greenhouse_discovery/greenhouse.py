@@ -7,7 +7,7 @@ import re
 import httpx
 from bs4 import BeautifulSoup
 
-from greenhouse_discovery.models import CandidateToken, DiscoveredBoard
+from job_bot.greenhouse_discovery.models import CandidateToken, DiscoveredBoard
 
 API_ROOT = "https://boards-api.greenhouse.io/v1/boards"
 

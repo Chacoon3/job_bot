@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from greenhouse_discovery.models import CandidateToken, CrawlIndex
+from job_bot.greenhouse_discovery.models import CandidateToken, CrawlIndex
 
 COLLINFO_URL = "https://index.commoncrawl.org/collinfo.json"
 GREENHOUSE_HOSTS = {

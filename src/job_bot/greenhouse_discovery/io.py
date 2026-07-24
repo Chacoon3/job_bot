@@ -4,7 +4,7 @@ import csv
 import json
 from pathlib import Path
 
-from greenhouse_discovery.models import DiscoveryReport
+from job_bot.greenhouse_discovery.models import DiscoveryReport
 
 
 def write_json(path: Path, report: DiscoveryReport) -> None:
