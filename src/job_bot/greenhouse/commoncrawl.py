@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from urllib.parse import urlparse
@@ -13,6 +14,8 @@ GREENHOUSE_HOSTS = {
     "boards.greenhouse.io",
     "job-boards.greenhouse.io",
 }
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+MAX_REQUEST_ATTEMPTS = 3
 
 
 def extract_token_from_url(url: str) -> str | None:
@@ -43,8 +46,7 @@ class CommonCrawlClient:
         self.client = client
 
     async def latest_indexes(self, count: int) -> list[CrawlIndex]:
-        response = await self.client.get(COLLINFO_URL)
-        response.raise_for_status()
+        response = await self._get(COLLINFO_URL)
         raw = response.json()
 
         indexes = [CrawlIndex.model_validate(item) for item in raw]
@@ -52,22 +54,45 @@ class CommonCrawlClient:
         indexes.sort(key=lambda item: item.id, reverse=True)
         return indexes[:count]
 
+    async def _get(
+        self,
+        url: str,
+        *,
+        params: dict[str, str | int] | None = None,
+    ) -> httpx.Response:
+        """GET a Common Crawl resource, retrying only transient failures."""
+        for attempt in range(MAX_REQUEST_ATTEMPTS):
+            response = await self.client.get(url, params=params)
+            if response.status_code not in RETRYABLE_STATUS_CODES:
+                response.raise_for_status()
+                return response
+
+            if attempt == MAX_REQUEST_ATTEMPTS - 1:
+                response.raise_for_status()
+
+            retry_after = response.headers.get("Retry-After")
+            try:
+                delay = float(retry_after) if retry_after is not None else 0.5 * (2**attempt)
+            except ValueError:
+                delay = 0.5 * (2**attempt)
+            await asyncio.sleep(min(max(delay, 0), 10))
+
+        raise RuntimeError("unreachable")
+
     async def _num_pages(
         self,
         index: CrawlIndex,
         host: str,
     ) -> int:
-        response = await self.client.get(
+        response = await self._get(
             index.cdx_api,
             params={
                 "url": f"{host}/*",
                 "output": "json",
-                "matchType": "prefix",
                 "filter": "status:200",
                 "showNumPages": "true",
             },
         )
-        response.raise_for_status()
 
         # Common Crawl has returned both JSON objects and plain integers
         # for this query across API versions.
@@ -109,20 +134,27 @@ class CommonCrawlClient:
         )
 
         for page in range(page_count):
-            response = await self.client.get(
-                index.cdx_api,
-                params={
-                    "url": f"{host}/*",
-                    "output": "json",
-                    "matchType": "prefix",
-                    "filter": "status:200",
-                    # Collapse repeat captures of the same canonical URL.
-                    "collapse": "urlkey",
-                    "fl": "url",
-                    "page": page,
-                },
-            )
-            response.raise_for_status()
+            try:
+                response = await self._get(
+                    index.cdx_api,
+                    params={
+                        # The trailing wildcard already selects prefix matching.
+                        # Supplying matchType=prefix as well makes the current CDX
+                        # API return a false "No Captures" 404.
+                        "url": f"{host}/*",
+                        "output": "json",
+                        "filter": "status:200",
+                        # Collapse repeat captures of the same canonical URL.
+                        "collapse": "urlkey",
+                        "fl": "url",
+                        "page": page,
+                    },
+                )
+            except httpx.HTTPStatusError as exc:
+                # CDX uses 404 to report a valid query with no captures.
+                if exc.response.status_code == 404:
+                    return
+                raise
 
             for line in response.text.splitlines():
                 line = line.strip()
@@ -182,6 +214,6 @@ class CommonCrawlClient:
                         if len(candidates) >= max_candidates:
                             return candidates, records_seen, errors
                 except httpx.HTTPError as exc:
-                    errors.append(f"{index.id} {host}: " f"{type(exc).__name__}: {exc}")
+                    errors.append(f"{index.id} {host}: {type(exc).__name__}: {exc}")
 
         return candidates, records_seen, errors

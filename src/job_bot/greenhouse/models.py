@@ -9,7 +9,7 @@ class CrawlIndex(BaseModel):
     id: str
     name: str | None = None
     timegate: str | None = None
-    cdx_api: str
+    cdx_api: str = Field(alias="cdx-api")
     from_date: str | None = Field(default=None, alias="from")
     to_date: str | None = Field(default=None, alias="to")
 
@@ -34,7 +34,7 @@ class DiscoveredBoard(BaseModel):
 
 class DiscoveryConfig(BaseModel):
     # Number of live, API-verified boards to return.
-    limit: int = Field(default=100, ge=1, le=100_000)
+    limit: int = Field(default=10, ge=1, le=100_000)
 
     # Stop enumerating Common Crawl after this many unique token candidates.
     max_candidates: int = Field(default=10_000, ge=1)

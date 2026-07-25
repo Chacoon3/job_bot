@@ -15,6 +15,25 @@
       "justMyCode": true
     },
     {
+      "name": "Debug greenhouse CLI",
+      "type": "python",
+      "request": "launch",
+      "module": "job_bot.greenhouse.cli",
+      "args": [
+        "--limit", "10",
+        "--max-candidates", "1000",
+        "--crawl-count", "1",
+        "--max-pages-per-query", "10"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
       "name": "Debug API (Uvicorn)",
       "type": "python",
       "request": "launch",
