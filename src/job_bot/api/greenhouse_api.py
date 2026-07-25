@@ -9,7 +9,9 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
-from job_bot.greenhouse.repository import list_boards
+from job_bot.greenhouse.models import DiscoveryConfig, DiscoveryReport
+from job_bot.greenhouse.repository import list_boards, upsert_boards
+from job_bot.greenhouse.service import GreenhouseGlobalDiscoverer
 
 router = APIRouter(prefix="/api", tags=["job_bot"])
 
@@ -82,3 +84,14 @@ async def get_boards(
         offset=offset,
         boards=[GreenhouseBoardResponse.model_validate(board) for board in boards],
     )
+
+
+@router.post("/boards/discover")
+async def discover_boards(
+    config: DiscoveryConfig,
+    session: Annotated[Session, Depends(get_session)],
+) -> DiscoveryReport:
+    report = await GreenhouseGlobalDiscoverer(config).discover()
+    upsert_boards(session, report.boards)
+    session.commit()
+    return report

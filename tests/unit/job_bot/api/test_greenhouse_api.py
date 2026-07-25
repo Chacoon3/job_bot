@@ -6,12 +6,18 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from job_bot.api import dependencies, greenhouse_api
+from job_bot.greenhouse.models import DiscoveryReport, DiscoveryStats
 from job_bot.main import app
 
 
 class DummySession:
+    committed = False
+
     def close(self) -> None:
         return
+
+    def commit(self) -> None:
+        self.committed = True
 
 
 def _sample_board() -> SimpleNamespace:
@@ -93,3 +99,59 @@ def test_get_boards_passes_filters(monkeypatch) -> None:
     assert captured["sort_desc"] is False
     assert captured["limit"] == 20
     assert captured["offset"] == 5
+
+
+def test_discover_boards_runs_discovery_and_persists_results(monkeypatch) -> None:
+    session = DummySession()
+    captured: dict[str, object] = {}
+    report = DiscoveryReport(boards=[], stats=DiscoveryStats(unique_candidates=7))
+
+    class FakeDiscoverer:
+        def __init__(self, config) -> None:
+            captured["config"] = config
+
+        async def discover(self) -> DiscoveryReport:
+            return report
+
+    def fake_upsert_boards(received_session, boards) -> int:
+        captured["session"] = received_session
+        captured["boards"] = boards
+        return len(boards)
+
+    app.dependency_overrides[dependencies.get_session] = lambda: session
+    monkeypatch.setattr(greenhouse_api, "GreenhouseGlobalDiscoverer", FakeDiscoverer)
+    monkeypatch.setattr(greenhouse_api, "upsert_boards", fake_upsert_boards)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/boards/discover",
+        json={
+            "limit": 25,
+            "max_candidates": 500,
+            "crawl_count": 3,
+            "max_pages_per_query": 20,
+            "include_empty_boards": True,
+            "enrich_company_names": False,
+            "verification_concurrency": 12,
+            "enrichment_concurrency": 6,
+            "request_timeout_seconds": 15.5,
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["stats"]["unique_candidates"] == 7
+    config = captured["config"]
+    assert config.limit == 25
+    assert config.max_candidates == 500
+    assert config.crawl_count == 3
+    assert config.max_pages_per_query == 20
+    assert config.include_empty_boards is True
+    assert config.enrich_company_names is False
+    assert config.verification_concurrency == 12
+    assert config.enrichment_concurrency == 6
+    assert config.request_timeout_seconds == 15.5
+    assert captured["session"] is session
+    assert captured["boards"] == []
+    assert session.committed is True
