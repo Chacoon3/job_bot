@@ -22,28 +22,42 @@ pip install -e .
 pytest
 ```
 
-## MySQL database
+## PostgreSQL database
 
-Set a SQLAlchemy MySQL connection URL:
+Set a SQLAlchemy PostgreSQL connection URL:
 
 ```bash
-DATABASE_URL=mysql+pymysql://job_bot:password@localhost:3306/job_bot?charset=utf8mb4
+DATABASE_URL=postgresql+psycopg://job_bot:password@localhost:5432/job_bot
 DB_POOL_SIZE=10
 DB_MAX_OVERFLOW=20
 DB_POOL_TIMEOUT_SECONDS=30
 DB_POOL_RECYCLE_SECONDS=1800
 ```
 
-Create the `greenhouse_boards` table and its indexes:
+Apply all database migrations:
 
 ```bash
-python -m job_bot.db.init_db
+alembic upgrade head
 ```
 
-The target database must already exist. Schema creation is idempotent.
+Create a new explicit migration:
+
+```bash
+alembic revision -m "describe schema change"
+```
+
+Rollback the most recent migration:
+
+```bash
+alembic downgrade -1
+```
+
+The target database must already exist. Alembic records applied revisions in
+its `alembic_version` table. Runtime ORM metadata is not used to generate the
+database schema.
 The connection pool validates connections before checkout, permits up to
 `DB_POOL_SIZE + DB_MAX_OVERFLOW` concurrent connections, and recycles
-long-lived MySQL connections.
+long-lived PostgreSQL connections.
 
 ## Run locally
 

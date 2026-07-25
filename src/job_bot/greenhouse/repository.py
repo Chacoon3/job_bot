@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from sqlalchemy.dialects.mysql import insert
+from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
@@ -16,16 +17,19 @@ def upsert_boards(session: Session, boards: Iterable[DiscoveredBoard]) -> int:
     for board in boards:
         values = board.model_dump()
         statement = insert(GreenhouseBoard).values(**values)
-        statement = statement.on_duplicate_key_update(
-            company_name=statement.inserted.company_name,
-            board_url=statement.inserted.board_url,
-            api_url=statement.inserted.api_url,
-            active_job_count=statement.inserted.active_job_count,
-            sample_job_titles=statement.inserted.sample_job_titles,
-            discovered_urls=statement.inserted.discovered_urls,
-            crawl_indexes=statement.inserted.crawl_indexes,
-            verified_at=statement.inserted.verified_at,
-            updated_at=text("CURRENT_TIMESTAMP(6)"),
+        statement = statement.on_conflict_do_update(
+            index_elements=[GreenhouseBoard.token],
+            set_={
+                "company_name": statement.excluded.company_name,
+                "board_url": statement.excluded.board_url,
+                "api_url": statement.excluded.api_url,
+                "active_job_count": statement.excluded.active_job_count,
+                "sample_job_titles": statement.excluded.sample_job_titles,
+                "discovered_urls": statement.excluded.discovered_urls,
+                "crawl_indexes": statement.excluded.crawl_indexes,
+                "verified_at": statement.excluded.verified_at,
+                "updated_at": text("CURRENT_TIMESTAMP"),
+            },
         )
         session.execute(statement)
         count += 1

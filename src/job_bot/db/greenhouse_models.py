@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Index, Integer, String, text
-from sqlalchemy.dialects.mysql import DATETIME, JSON
+from sqlalchemy import BigInteger, DateTime, Index, Integer, String, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from job_bot.db.base import Base
@@ -24,21 +24,20 @@ class GreenhouseBoard(Base):
     board_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     api_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     active_job_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    sample_job_titles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    discovered_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    crawl_indexes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    # MySQL DATETIME does not retain offsets; all application values use UTC.
-    verified_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6), nullable=False)
+    sample_job_titles: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    discovered_urls: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    crawl_indexes: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DATETIME(fsp=6),
+        DateTime(timezone=True),
         nullable=False,
-        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_default=text("CURRENT_TIMESTAMP"),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DATETIME(fsp=6),
+        DateTime(timezone=True),
         nullable=False,
-        server_default=text("CURRENT_TIMESTAMP(6)"),
-        onupdate=text("CURRENT_TIMESTAMP(6)"),
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=text("CURRENT_TIMESTAMP"),
     )
 
     def as_dict(self) -> dict[str, Any]:

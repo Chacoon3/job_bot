@@ -7,9 +7,6 @@ from contextlib import contextmanager
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from job_bot.db import greenhouse_models
-from job_bot.db.base import Base
-
 DATABASE_URL_ENV = "DATABASE_URL"
 DB_POOL_SIZE_ENV = "DB_POOL_SIZE"
 DB_MAX_OVERFLOW_ENV = "DB_MAX_OVERFLOW"
@@ -37,7 +34,7 @@ def create_database_engine(database_url: str | None = None) -> Engine:
     if not url:
         raise RuntimeError(
             f"{DATABASE_URL_ENV} is required; expected a "
-            "mysql+pymysql://user:password@host:3306/database URL"
+            "postgresql+psycopg://user:password@host:5432/database URL"
         )
     return create_engine(
         url,
@@ -64,9 +61,3 @@ def session_scope(factory: sessionmaker[Session]) -> Iterator[Session]:
         raise
     finally:
         session.close()
-
-
-def create_schema(engine: Engine) -> None:
-    # The top-level model import registers tables with Base.metadata.
-    _ = greenhouse_models
-    Base.metadata.create_all(engine)
