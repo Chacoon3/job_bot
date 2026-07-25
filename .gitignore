@@ -23,3 +23,5 @@ Thumbs.db
 !.env.example
 
 .local/
+.coverage
+coverage.xml

@@ -12,3 +12,11 @@ venv/
 .gitignore
 tests/
 README.md
+
+.env
+.env.*
+!.env.example
+
+.local/
+.coverage
+coverage.xml
