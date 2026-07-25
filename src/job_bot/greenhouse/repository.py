@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from sqlalchemy import func
 from sqlalchemy.dialects.mysql import insert
 from sqlalchemy.orm import Session
 
@@ -26,7 +25,7 @@ def upsert_boards(session: Session, boards: Iterable[DiscoveredBoard]) -> int:
             discovered_urls=statement.inserted.discovered_urls,
             crawl_indexes=statement.inserted.crawl_indexes,
             verified_at=statement.inserted.verified_at,
-            updated_at=func.current_timestamp(),
+            updated_at=text("CURRENT_TIMESTAMP(6)"),
         )
         session.execute(statement)
         count += 1

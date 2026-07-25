@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Index, Integer, String, func
+from sqlalchemy import BigInteger, Index, Integer, String, text
 from sqlalchemy.dialects.mysql import DATETIME, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,13 +32,13 @@ class GreenhouseBoard(Base):
     created_at: Mapped[datetime] = mapped_column(
         DATETIME(fsp=6),
         nullable=False,
-        server_default=func.current_timestamp(),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DATETIME(fsp=6),
         nullable=False,
-        server_default=func.current_timestamp(),
-        onupdate=func.current_timestamp(),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        onupdate=text("CURRENT_TIMESTAMP(6)"),
     )
 
     def as_dict(self) -> dict[str, Any]:
