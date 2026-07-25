@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from datetime import datetime
 from itertools import islice
-from typing import Iterator, TypeVar
+from typing import TypeVar
 
 from sqlalchemy import Select, or_, select
 from sqlalchemy.dialects.postgresql import insert
@@ -17,7 +17,7 @@ DEFAULT_UPSERT_BATCH_SIZE = 1_000
 T = TypeVar("T")
 
 
-def batched[T](items: Iterable[T], size: int) -> Iterator[list[T]]:
+def batched(items: Iterable[T], size: int) -> Iterator[list[T]]:
     iterator = iter(items)
 
     while batch := list(islice(iterator, size)):
