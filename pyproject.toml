@@ -86,6 +86,7 @@ disable = [
     "invalid-name",
     "broad-exception-caught",
     "redefined-outer-name",
+    "R0917",  # Too many pos vars
 ]
 
 [tool.pylint.format]

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import datetime
 from enum import StrEnum
-from functools import lru_cache
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
-from job_bot.db.database import create_database_engine, create_session_factory
+from job_bot.api.dependencies import get_session
 from job_bot.greenhouse.repository import list_boards
 
 router = APIRouter(prefix="/api", tags=["job_bot"])
@@ -46,21 +45,9 @@ class GreenhouseBoardListResponse(BaseModel):
     boards: list[GreenhouseBoardResponse]
 
 
-@lru_cache(maxsize=1)
-def _get_session_factory() -> sessionmaker[Session]:
-    return create_session_factory(create_database_engine())
-
-
-def get_session() -> Iterator[Session]:
-    session = _get_session_factory()()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
 @router.get("/boards")
 async def get_boards(
+    session: Annotated[Session, Depends(get_session)],
     token: str | None = Query(default=None, min_length=1, max_length=255),
     company_name: str | None = Query(default=None, min_length=1, max_length=512),
     crawl_index: str | None = Query(default=None, min_length=1, max_length=64),
@@ -73,7 +60,6 @@ async def get_boards(
     sort_desc: bool = True,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    session: Session = Depends(get_session),
 ) -> GreenhouseBoardListResponse:
     boards, total = list_boards(
         session,

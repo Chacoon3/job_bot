@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from job_bot.api import greenhouse_api
+from job_bot.api import dependencies, greenhouse_api
 from job_bot.main import app
 
 
@@ -36,7 +36,7 @@ def test_get_boards_returns_paginated_payload(monkeypatch) -> None:
     def fake_list_boards(*args, **kwargs):
         return [_sample_board()], 1
 
-    app.dependency_overrides[greenhouse_api.get_session] = lambda: iter([DummySession()])
+    app.dependency_overrides[dependencies.get_session] = lambda: iter([DummySession()])
     monkeypatch.setattr(greenhouse_api, "list_boards", fake_list_boards)
 
     client = TestClient(app)
@@ -60,7 +60,7 @@ def test_get_boards_passes_filters(monkeypatch) -> None:
         captured.update(kwargs)
         return [], 0
 
-    app.dependency_overrides[greenhouse_api.get_session] = lambda: iter([DummySession()])
+    app.dependency_overrides[dependencies.get_session] = lambda: iter([DummySession()])
     monkeypatch.setattr(greenhouse_api, "list_boards", fake_list_boards)
 
     client = TestClient(app)
