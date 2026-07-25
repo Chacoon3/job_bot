@@ -22,6 +22,29 @@ pip install -e .
 pytest
 ```
 
+## MySQL database
+
+Set a SQLAlchemy MySQL connection URL:
+
+```bash
+DATABASE_URL=mysql+pymysql://job_bot:password@localhost:3306/job_bot?charset=utf8mb4
+DB_POOL_SIZE=10
+DB_MAX_OVERFLOW=20
+DB_POOL_TIMEOUT_SECONDS=30
+DB_POOL_RECYCLE_SECONDS=1800
+```
+
+Create the `greenhouse_boards` table and its indexes:
+
+```bash
+python -m job_bot.db.init_db
+```
+
+The target database must already exist. Schema creation is idempotent.
+The connection pool validates connections before checkout, permits up to
+`DB_POOL_SIZE + DB_MAX_OVERFLOW` concurrent connections, and recycles
+long-lived MySQL connections.
+
 ## Run locally
 
 ```bash
