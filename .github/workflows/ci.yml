@@ -129,6 +129,17 @@ jobs:
           PYTHONPATH: src
         run: pytest tests/unit
 
+      - name: Apply database migrations
+        if: github.event_name != 'pull_request'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::The DATABASE_URL GitHub Actions secret is not configured"
+            exit 1
+          fi
+          alembic upgrade head
+
   coverage:
     name: Coverage Upload
     needs: changes
@@ -192,13 +203,3 @@ jobs:
           ALPACA_API_KEY: ${{ secrets['ALPACA_API_KEY'] }}
           ALPACA_SECRET_KEY: ${{ secrets['ALPACA_SECRET_KEY'] }}
         run: pytest -m "integration"
-
-      - name: Apply database migrations
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::error::The DATABASE_URL GitHub Actions secret is not configured"
-            exit 1
-          fi
-          alembic upgrade head
