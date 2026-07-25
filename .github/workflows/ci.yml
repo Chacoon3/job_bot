@@ -202,4 +202,13 @@ jobs:
           OPENAI_API_KEY: ${{ secrets['OPENAI_API_KEY'] }}
           ALPACA_API_KEY: ${{ secrets['ALPACA_API_KEY'] }}
           ALPACA_SECRET_KEY: ${{ secrets['ALPACA_SECRET_KEY'] }}
-        run: pytest -m "integration"
+        run: |
+          test_exit_code=0
+          pytest -m "integration" || test_exit_code=$?
+
+          if (( test_exit_code == 5 )); then
+            echo "::notice::No integration tests are currently configured"
+            exit 0
+          fi
+
+          exit "$test_exit_code"
