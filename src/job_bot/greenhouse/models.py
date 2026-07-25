@@ -6,6 +6,13 @@ from pydantic import BaseModel, Field
 
 
 class CrawlIndex(BaseModel):
+    """Describe one Common Crawl collection that can be queried through CDX.
+
+    Common Crawl returns this metadata from ``collinfo.json``. The discovery
+    service keeps the model separate from HTTP handling so index selection and
+    provenance can pass through the pipeline as validated data.
+    """
+
     id: str
     name: str | None = None
     timegate: str | None = None
@@ -15,12 +22,26 @@ class CrawlIndex(BaseModel):
 
 
 class CandidateToken(BaseModel):
+    """Represent an unverified board token extracted from archived URLs.
+
+    A token remains a candidate until the live Greenhouse API accepts it. URLs
+    and crawl-index IDs are retained as evidence and later copied to a verified
+    board so consumers can understand where it was discovered.
+    """
+
     token: str
     discovered_urls: list[str] = Field(default_factory=list)
     crawl_indexes: list[str] = Field(default_factory=list)
 
 
 class DiscoveredBoard(BaseModel):
+    """Represent the current, verified view of a public Greenhouse board.
+
+    The model combines stable board identity and URLs with a point-in-time job
+    count, a small title sample, and Common Crawl provenance. It is the primary
+    discovery output and the input shape used by persistence and exporters.
+    """
+
     token: str
     company_name: str | None = None
     board_url: str
@@ -33,6 +54,13 @@ class DiscoveredBoard(BaseModel):
 
 
 class DiscoveryConfig(BaseModel):
+    """Define resource limits and behavior for one discovery operation.
+
+    Bounds on candidates, crawl pages, concurrency, and returned boards prevent
+    an internet-wide search from becoming unbounded. Pydantic constraints reject
+    unsafe values before any network work begins.
+    """
+
     # Number of live, API-verified boards to return.
     limit: int = Field(default=10, ge=1, le=100_000)
 
@@ -69,6 +97,13 @@ class DiscoveryConfig(BaseModel):
 
 
 class DiscoveryStats(BaseModel):
+    """Summarize how much work a discovery run performed.
+
+    The counters distinguish archived records scanned, candidates found,
+    candidates verified, and boards rejected. They are operational diagnostics,
+    not persistent board attributes.
+    """
+
     crawl_indexes_used: list[str] = Field(default_factory=list)
     cdx_records_seen: int = 0
     unique_candidates: int = 0
@@ -78,6 +113,13 @@ class DiscoveryStats(BaseModel):
 
 
 class DiscoveryReport(BaseModel):
+    """Package all externally useful results from one discovery run.
+
+    Successful boards remain available when an individual crawl query fails, so
+    errors are collected beside results instead of aborting the entire run. The
+    generation timestamp identifies when this snapshot was assembled.
+    """
+
     boards: list[DiscoveredBoard]
     stats: DiscoveryStats
     errors: list[str] = Field(default_factory=list)

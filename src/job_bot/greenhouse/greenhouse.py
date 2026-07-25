@@ -28,6 +28,14 @@ def _clean_title(value: str) -> str:
 
 
 class GreenhouseVerifier:
+    """Convert archived candidate tokens into live board snapshots.
+
+    Verification calls the public jobs endpoint because archived URLs may refer
+    to deleted or renamed boards. A semaphore bounds concurrent requests, while
+    the return status distinguishes valid, empty, and invalid boards without
+    making expected stale candidates exceptional.
+    """
+
     def __init__(
         self,
         client: httpx.AsyncClient,
@@ -94,6 +102,13 @@ class GreenhouseVerifier:
 
 
 class BoardNameEnricher:
+    """Add a human-facing company name to an already verified board.
+
+    The jobs API does not provide a reliable board display name, so enrichment
+    inspects Open Graph, Twitter, and HTML title metadata on the public page.
+    Failure is non-fatal because verified job data remains useful without a name.
+    """
+
     def __init__(
         self,
         client: httpx.AsyncClient,

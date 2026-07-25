@@ -42,6 +42,14 @@ def extract_token_from_url(url: str) -> str | None:
 
 
 class CommonCrawlClient:
+    """Discover Greenhouse board candidates through Common Crawl's CDX API.
+
+    The client owns index enumeration, pagination, response parsing, transient
+    retry behavior, and conversion of archived URLs into deduplicated candidate
+    tokens. It does not decide whether a board is still live; that responsibility
+    belongs to :class:`GreenhouseVerifier`.
+    """
+
     def __init__(self, client: httpx.AsyncClient) -> None:
         self.client = client
 

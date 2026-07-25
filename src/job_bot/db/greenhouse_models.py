@@ -11,6 +11,14 @@ from job_bot.db.base import Base
 
 
 class GreenhouseBoard(Base):
+    """Map the latest known state of a Greenhouse board to PostgreSQL.
+
+    The token is the natural upsert key. Mutable discovery results such as job
+    count, samples, provenance, and verification time are refreshed in place,
+    while JSONB preserves list-shaped data without child tables. Alembic, rather
+    than ORM metadata, owns creation and evolution of the database table.
+    """
+
     __tablename__ = "greenhouse_boards"
     __table_args__ = (
         Index("idx_greenhouse_boards_company_name", "company_name"),

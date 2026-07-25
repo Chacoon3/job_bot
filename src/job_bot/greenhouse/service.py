@@ -18,11 +18,13 @@ from job_bot.greenhouse.models import (
 
 
 class GreenhouseGlobalDiscoverer:
-    """
-    Internet-wide Greenhouse board discovery without company-name input.
+    """Orchestrate internet-wide board discovery without company-name seeds.
 
-    Discovery is historical/index-based; current validity is established by
-    checking the live Greenhouse Job Board API before returning each board.
+    The service mines recent Common Crawl indexes for candidate tokens, validates
+    them against the live Greenhouse API in bounded batches, and optionally
+    enriches display names. Lower-level clients handle individual protocols;
+    this class applies limits, aggregates statistics and errors, and returns a
+    complete ``DiscoveryReport``.
     """
 
     def __init__(

@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import html
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,21 +14,42 @@ GREENHOUSE_API_ROOT = "https://boards-api.greenhouse.io/v1/boards"
 
 
 class Location(BaseModel):
+    """Model the display location embedded in a Greenhouse job.
+
+    Greenhouse may return an empty location object, so the name defaults to an
+    empty string to keep downstream text matching predictable.
+    """
+
     name: str = ""
 
 
 class Department(BaseModel):
+    """Model a Greenhouse department used to categorize and filter jobs."""
+
     id: int
     name: str
 
 
 class Office(BaseModel):
+    """Model an organizational office attached to a Greenhouse job.
+
+    Its optional location is distinct from the job's primary display location
+    and preserves Greenhouse's office hierarchy for downstream consumers.
+    """
+
     id: int
     name: str
     location: str | None = None
 
 
 class GreenhouseJob(BaseModel):
+    """Provide a tolerant application model for a Greenhouse job posting.
+
+    Known fields are typed while unknown API additions are ignored, insulating
+    callers from backward-compatible Greenhouse changes. ``plain_description``
+    derives searchable text from optional HTML without changing the response.
+    """
+
     model_config = ConfigDict(extra="ignore")
 
     id: int
@@ -53,12 +75,25 @@ class GreenhouseJob(BaseModel):
 
 
 class JobBoardResponse(BaseModel):
+    """Validate the envelope returned by a Greenhouse jobs endpoint.
+
+    Jobs are strongly modeled, while ``meta`` stays an open dictionary because
+    its contents vary and are not required by the search workflow.
+    """
+
     jobs: list[GreenhouseJob]
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class JobSearch:
+    """Describe immutable client-side criteria for filtering jobs.
+
+    The public board API returns listings rather than accepting these filters.
+    The client therefore fetches jobs and applies this value object locally
+    across titles, descriptions, locations, departments, and offices.
+    """
+
     keywords: tuple[str, ...] = ()
     locations: tuple[str, ...] = ()
     departments: tuple[str, ...] = ()
@@ -67,6 +102,14 @@ class JobSearch:
 
 
 class GreenhouseClient:
+    """Retrieve and locally search jobs from public Greenhouse boards.
+
+    One bounded ``httpx.AsyncClient`` is owned for the context-manager lifetime
+    so connections are reused across boards. Responses are validated into
+    application models, and multi-board searches isolate a failure on one board
+    from results for the others.
+    """
+
     def __init__(
         self,
         timeout_seconds: float = 20.0,
