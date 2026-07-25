@@ -18,7 +18,7 @@ def test_parse_pure_text_pdf_concatenates_page_text(monkeypatch) -> None:
         SimpleNamespace(extract_text=Mock(return_value="world")),
     ]
     pdf_reader_factory = Mock(side_effect=fake_pdf_reader)
-    monkeypatch.setattr("job_bot.utils.file_upload.PyPDF2.PdfReader", pdf_reader_factory)
+    monkeypatch.setattr("job_bot.utils.file_upload.PdfReader", pdf_reader_factory)
 
     result = parse_pure_text_pdf(b"pdf-bytes")
 
