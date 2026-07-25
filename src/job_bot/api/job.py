@@ -1,7 +1,7 @@
 import hashlib
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, Request
 
 from job_bot.db.app_redis import AppRedisAsync
 from job_bot.flow import (
@@ -17,20 +17,20 @@ from job_bot.flow import (
 from job_bot.resume_parser import parse_resume
 from job_bot.utils.file_upload import parse_pure_text_pdf
 
-app = FastAPI(title="job_bot", version="0.1.0")
+router = APIRouter(prefix="/api", tags=["job_bot"])
 
 
-@app.get("/")
+@router.get("/")
 def root() -> dict[str, str]:
     return {"service": "job_bot", "status": "ok"}
 
 
-@app.get("/health")
+@router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "healthy"}
 
 
-@app.get("/api/find_jobs")
+@router.get("/find_jobs")
 def api_find_jobs() -> list[JobEntry]:
 
     criteria = JobQuery(
@@ -46,7 +46,7 @@ def api_find_jobs() -> list[JobEntry]:
     return jobs
 
 
-@app.post("/api/candidate_profile")
+@router.post("/candidate_profile")
 async def candidate_profile(request: Request) -> dict[str, str]:
     form = await request.form()
     uploaded_file = form.get("file")
@@ -68,7 +68,7 @@ async def candidate_profile(request: Request) -> dict[str, str]:
     return {"profile": str(profile)}
 
 
-@app.post("/api/apply")
+@router.post("/apply")
 async def api_apply(request: Request) -> ApplicationStatus:
     form = await request.form()
     uploaded_file = form.get("file")
@@ -107,7 +107,7 @@ async def api_apply(request: Request) -> ApplicationStatus:
     return status
 
 
-@app.post("/api/find_and_apply")
+@router.post("/find_and_apply")
 async def api_apply_jobs(request: Request) -> list[ApplicationStatus]:
 
     criteria = JobQuery(
