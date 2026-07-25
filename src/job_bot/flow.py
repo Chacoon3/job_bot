@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from logging import getLogger
 from typing import Literal
 
+import structlog
 from langchain.agents import create_agent
 from langchain.messages import HumanMessage
 from playwright.async_api import async_playwright
@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 from job_bot.llm import OpenAILLMProvider
 from job_bot.openai_client import get_openai_client
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
+
+logger = structlog.get_logger(__name__)
 
 
 class Interval(BaseModel):
@@ -238,7 +240,7 @@ async def apply_jobs(query: JobQuery, candidate: CandidateProfile) -> list[Appli
     for job in jobs:
         try:
             resp = await apply_job(job.url, candidate)
-            getLogger().info(resp)
+            logger.info("job_application_agent_completed", response=resp)
         except Exception as exc:
             status.append(ApplicationStatus(job=job, status="failed", message=str(exc)))
             continue

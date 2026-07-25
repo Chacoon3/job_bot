@@ -90,3 +90,50 @@ def test_iter_urls_treats_no_captures_as_empty() -> None:
 
     urls = asyncio.run(run())
     assert urls == []
+
+
+def test_discover_candidates_runs_queries_with_bounded_concurrency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    active_queries = 0
+    peak_queries = 0
+
+    async def fake_iter_urls(
+        index: CrawlIndex,
+        host: str,
+        max_pages: int,
+    ):
+        nonlocal active_queries, peak_queries
+        active_queries += 1
+        peak_queries = max(peak_queries, active_queries)
+        await asyncio.sleep(0)
+        yield f"https://{host}/{index.id}"
+        active_queries -= 1
+
+    async def run() -> tuple[int, int]:
+        async with httpx.AsyncClient() as client:
+            commoncrawl = CommonCrawlClient(client)
+            monkeypatch.setattr(commoncrawl, "iter_urls", fake_iter_urls)
+            candidates, records_seen, errors = await commoncrawl.discover_candidates(
+                indexes=[
+                    crawl_index(),
+                    CrawlIndex.model_validate(
+                        {
+                            "id": "CC-MAIN-2026-21",
+                            "cdx-api": "https://index.commoncrawl.org/older-index",
+                        }
+                    ),
+                ],
+                hosts=["boards.greenhouse.io", "job-boards.greenhouse.io"],
+                max_candidates=10,
+                max_pages_per_query=1,
+                concurrency=2,
+            )
+
+        assert errors == []
+        assert records_seen == 4
+        return len(candidates), peak_queries
+
+    candidate_count, observed_peak = asyncio.run(run())
+    assert candidate_count == 2
+    assert observed_peak == 2

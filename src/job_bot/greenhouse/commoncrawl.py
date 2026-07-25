@@ -190,19 +190,26 @@ class CommonCrawlClient:
         hosts: list[str],
         max_candidates: int,
         max_pages_per_query: int,
+        concurrency: int,
     ) -> tuple[dict[str, CandidateToken], int, list[str]]:
         candidates: dict[str, CandidateToken] = {}
         records_seen = 0
         errors: list[str] = []
+        semaphore = asyncio.Semaphore(concurrency)
 
-        for index in indexes:
-            for host in hosts:
+        async def scan(index: CrawlIndex, host: str) -> None:
+            nonlocal records_seen
+
+            async with semaphore:
                 try:
                     async for url in self.iter_urls(
                         index=index,
                         host=host,
                         max_pages=max_pages_per_query,
                     ):
+                        if len(candidates) >= max_candidates:
+                            return
+
                         records_seen += 1
                         token = extract_token_from_url(url)
                         if token is None:
@@ -220,8 +227,10 @@ class CommonCrawlClient:
                             item.crawl_indexes.append(index.id)
 
                         if len(candidates) >= max_candidates:
-                            return candidates, records_seen, errors
+                            return
                 except httpx.HTTPError as exc:
                     errors.append(f"{index.id} {host}: {type(exc).__name__}: {exc}")
+
+        await asyncio.gather(*(scan(index, host) for index in indexes for host in hosts))
 
         return candidates, records_seen, errors

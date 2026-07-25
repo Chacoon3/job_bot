@@ -3,7 +3,9 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
+from time import perf_counter_ns
 
+import structlog
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -12,6 +14,38 @@ DB_POOL_SIZE_ENV = "DB_POOL_SIZE"
 DB_MAX_OVERFLOW_ENV = "DB_MAX_OVERFLOW"
 DB_POOL_TIMEOUT_ENV = "DB_POOL_TIMEOUT_SECONDS"
 DB_POOL_RECYCLE_ENV = "DB_POOL_RECYCLE_SECONDS"
+
+logger = structlog.get_logger(__name__)
+
+
+class TimedSession(Session):
+    """Log the database time spent committing or rolling back a transaction."""
+
+    def _record_transaction(self, operation: str, started_at: int, status: str) -> None:
+        logger.info(
+            "database_transaction_completed",
+            operation=operation,
+            status=status,
+            duration_ms=round((perf_counter_ns() - started_at) / 1_000_000, 3),
+        )
+
+    def commit(self) -> None:
+        started_at = perf_counter_ns()
+        try:
+            super().commit()
+        except Exception:
+            self._record_transaction("commit", started_at, "error")
+            raise
+        self._record_transaction("commit", started_at, "success")
+
+    def rollback(self) -> None:
+        started_at = perf_counter_ns()
+        try:
+            super().rollback()
+        except Exception:
+            self._record_transaction("rollback", started_at, "error")
+            raise
+        self._record_transaction("rollback", started_at, "success")
 
 
 def _integer_setting(name: str, default: int, minimum: int = 0) -> int:
@@ -47,7 +81,7 @@ def create_database_engine(database_url: str | None = None) -> Engine:
 
 
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(bind=engine, expire_on_commit=False)
+    return sessionmaker(bind=engine, class_=TimedSession, expire_on_commit=False)
 
 
 @contextmanager

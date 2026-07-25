@@ -62,9 +62,11 @@ def test_upsert_boards_executes_one_statement_per_batch() -> None:
     assert count == 5
     assert session.execute.call_count == 3
 
-    first_statement = session.execute.call_args_list[0].args[0]
+    first_call = session.execute.call_args_list[0]
+    first_statement = first_call.args[0]
+    first_values = first_call.args[1]
     compiled = str(first_statement.compile(dialect=postgresql.dialect()))
-    assert compiled.count("active_job_count_m") == 2
+    assert len(first_values) == 2
     assert "ON CONFLICT (token) DO UPDATE" in compiled
 
 

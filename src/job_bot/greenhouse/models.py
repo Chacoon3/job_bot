@@ -70,6 +70,9 @@ class DiscoveryConfig(BaseModel):
     # Search this many newest Common Crawl monthly indexes.
     crawl_count: int = Field(default=2, ge=1, le=24)
 
+    # Concurrent Common Crawl index/host queries.
+    crawl_concurrency: int = Field(default=4, ge=1, le=50)
+
     # A board can be valid with zero open jobs. Set true to include it.
     include_empty_boards: bool = False
 

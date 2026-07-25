@@ -39,9 +39,7 @@ class GreenhouseGlobalDiscoverer:
 
         headers = {
             "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
-            "User-Agent": (
-                "GreenhouseGlobalDiscovery/0.2 " "(public-board research; rate-limited)"
-            ),
+            "User-Agent": ("GreenhouseGlobalDiscovery/0.2 (public-board research; rate-limited)"),
         }
 
         limits = httpx.Limits(
@@ -67,9 +65,7 @@ class GreenhouseGlobalDiscoverer:
                 return DiscoveryReport(
                     boards=[],
                     stats=DiscoveryStats(),
-                    errors=[
-                        f"Could not load Common Crawl indexes: " f"{type(exc).__name__}: {exc}"
-                    ],
+                    errors=[f"Could not load Common Crawl indexes: {type(exc).__name__}: {exc}"],
                 )
 
             candidates, records_seen, cc_errors = await commoncrawl.discover_candidates(
@@ -77,6 +73,7 @@ class GreenhouseGlobalDiscoverer:
                 hosts=config.hosts,
                 max_candidates=config.max_candidates,
                 max_pages_per_query=config.max_pages_per_query,
+                concurrency=config.crawl_concurrency,
             )
             errors.extend(cc_errors)
 
