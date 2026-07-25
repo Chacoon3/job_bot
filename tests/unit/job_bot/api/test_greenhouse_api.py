@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from job_bot.api import greenhouse as greenhouse_api
+from job_bot.api import greenhouse_api
 from job_bot.main import app
 
 

@@ -5,7 +5,7 @@ from job_bot.flow import (
     EducationDegree,
     Interval,
     JobEntry,
-    _apply_job,
+    apply_job,
 )
 
 
@@ -104,7 +104,7 @@ def _pattern_text(pattern: object) -> str:
 def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
     page = FakePage()
     session = FakePlaywrightSession(page)
-    monkeypatch.setattr("job_bot.flow._sync_playwright_session", lambda: session)
+    monkeypatch.setattr("job_bot.flow.async_playwright", lambda: session)
 
     job = JobEntry(
         job_title="Software Engineer",
@@ -135,7 +135,7 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
         require_sponsorship=True,
     )
 
-    _apply_job(job, candidate)
+    apply_job(job, candidate)
 
     assert session.entered is True
     assert session.exited is True

@@ -2,7 +2,7 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-from job_bot.applier import BrowserSession, build_browser_tools
+from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 
 
 class FakeLocator:
@@ -203,9 +203,7 @@ def test_click_apply_follows_new_application_tab() -> None:
     job_page.click_callback = lambda: session._context.pages.append(application_page)
     tools = build_browser_tools(session)
 
-    result = json.loads(
-        asyncio.run(_tool(tools, "browser_click").ainvoke({"selector": "#apply"}))
-    )
+    result = json.loads(asyncio.run(_tool(tools, "browser_click").ainvoke({"selector": "#apply"})))
 
     assert result["opened_new_tab"] is True
     assert result["url_after"] == "https://apply.example.com"

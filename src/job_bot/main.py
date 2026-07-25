@@ -4,7 +4,7 @@ import sys
 import uvicorn
 from fastapi import FastAPI
 
-from job_bot.api.greenhouse import router as greenhouse_router
+from job_bot.api.greenhouse_api import router as greenhouse_router
 from job_bot.api.job import router
 
 app = FastAPI(title="job_bot", version="0.1.0")
