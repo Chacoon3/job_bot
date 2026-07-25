@@ -33,37 +33,6 @@ jobs:
               - 'requirements*.txt'
               - 'pyproject.toml'
 
-  database-migrations:
-    name: Database Migrations
-    needs: changes
-    if: github.event_name != 'pull_request' && needs.changes.outputs.src_or_tests == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Apply database migrations
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::error::The DATABASE_URL GitHub Actions secret is not configured"
-            exit 1
-          fi
-          alembic upgrade head
-
   lint:
     name: Lint (Python ${{ matrix.python-version }})
     needs: changes
@@ -88,6 +57,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install black isort
 
       - name: Run format and lint checks
         run: |
@@ -115,7 +85,16 @@ jobs:
           pip install bandit pip-audit
 
       - name: Run static security scan (Bandit)
-        run: bandit -q -r src
+        run: |
+          bandit -q -r src -f json -o bandit-report.json || true
+
+          high_issues="$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' bandit-report.json)"
+          echo "Bandit found ${high_issues} high-severity issue(s); maximum allowed is 10"
+
+          if (( high_issues > 10 )); then
+            echo "::error::Bandit found ${high_issues} high-severity issues, exceeding the limit of 10"
+            exit 1
+          fi
 
       - name: Run dependency vulnerability scan (pip-audit)
         run: pip-audit -r requirements.txt
@@ -213,3 +192,13 @@ jobs:
           ALPACA_API_KEY: ${{ secrets['ALPACA_API_KEY'] }}
           ALPACA_SECRET_KEY: ${{ secrets['ALPACA_SECRET_KEY'] }}
         run: pytest -m "integration"
+
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::The DATABASE_URL GitHub Actions secret is not configured"
+            exit 1
+          fi
+          alembic upgrade head

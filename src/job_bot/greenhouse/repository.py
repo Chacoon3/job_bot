@@ -2,40 +2,93 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
+from itertools import islice
+from typing import Iterator, TypeVar
 
-from sqlalchemy import Select, select, text
+from sqlalchemy import Select, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.greenhouse.models import DiscoveredBoard
 
+DEFAULT_UPSERT_BATCH_SIZE = 1_000
 
-def upsert_boards(session: Session, boards: Iterable[DiscoveredBoard]) -> int:
-    """Insert or refresh Greenhouse boards and return the number processed."""
-    count = 0
+T = TypeVar("T")
 
-    for board in boards:
-        values = board.model_dump()
-        statement = insert(GreenhouseBoard).values(**values)
-        statement = statement.on_conflict_do_update(
-            index_elements=[GreenhouseBoard.token],
-            set_={
-                "company_name": statement.excluded.company_name,
-                "board_url": statement.excluded.board_url,
-                "api_url": statement.excluded.api_url,
-                "active_job_count": statement.excluded.active_job_count,
-                "sample_job_titles": statement.excluded.sample_job_titles,
-                "discovered_urls": statement.excluded.discovered_urls,
-                "crawl_indexes": statement.excluded.crawl_indexes,
-                "verified_at": statement.excluded.verified_at,
-                "updated_at": text("CURRENT_TIMESTAMP"),
-            },
-        )
-        session.execute(statement)
-        count += 1
 
-    return count
+def batched[T](items: Iterable[T], size: int) -> Iterator[list[T]]:
+    iterator = iter(items)
+
+    while batch := list(islice(iterator, size)):
+        yield batch
+
+
+def upsert_boards(
+    session: Session,
+    boards: Iterable[DiscoveredBoard],
+    *,
+    batch_size: int = DEFAULT_UPSERT_BATCH_SIZE,
+) -> int:
+    """Insert or refresh Greenhouse boards and return input rows processed."""
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1")
+
+    insert_statement = insert(GreenhouseBoard)
+    excluded = insert_statement.excluded
+
+    changed = or_(
+        GreenhouseBoard.company_name.is_distinct_from(excluded.company_name),
+        GreenhouseBoard.board_url.is_distinct_from(excluded.board_url),
+        GreenhouseBoard.api_url.is_distinct_from(excluded.api_url),
+        GreenhouseBoard.active_job_count.is_distinct_from(excluded.active_job_count),
+        GreenhouseBoard.sample_job_titles.is_distinct_from(excluded.sample_job_titles),
+        GreenhouseBoard.discovered_urls.is_distinct_from(excluded.discovered_urls),
+        GreenhouseBoard.crawl_indexes.is_distinct_from(excluded.crawl_indexes),
+        GreenhouseBoard.verified_at.is_distinct_from(excluded.verified_at),
+    )
+
+    upsert_statement = insert_statement.on_conflict_do_update(
+        index_elements=[GreenhouseBoard.token],
+        set_={
+            GreenhouseBoard.company_name: excluded.company_name,
+            GreenhouseBoard.board_url: excluded.board_url,
+            GreenhouseBoard.api_url: excluded.api_url,
+            GreenhouseBoard.active_job_count: excluded.active_job_count,
+            GreenhouseBoard.sample_job_titles: excluded.sample_job_titles,
+            GreenhouseBoard.discovered_urls: excluded.discovered_urls,
+            GreenhouseBoard.crawl_indexes: excluded.crawl_indexes,
+            GreenhouseBoard.verified_at: excluded.verified_at,
+            GreenhouseBoard.updated_at: excluded.updated_at,
+        },
+        where=changed,
+    )
+
+    processed = 0
+
+    for batch in batched(boards, batch_size):
+        values = [
+            board.model_dump(
+                include={
+                    "token",
+                    "company_name",
+                    "board_url",
+                    "api_url",
+                    "active_job_count",
+                    "sample_job_titles",
+                    "discovered_urls",
+                    "crawl_indexes",
+                    "verified_at",
+                    "updated_at",
+                }
+            )
+            for board in batch
+        ]
+
+        session.execute(upsert_statement, values)
+        processed += len(values)
+
+    return processed
 
 
 def list_boards(
