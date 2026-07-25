@@ -16,6 +16,6 @@
   "python.testing.pytestArgs": ["tests"],
   "editor.formatOnSave": true,
   "pylint.enabled": true,
-  "pylint.cwd": "${workspaceFolder}/src",
+  "pylint.cwd": "${workspaceFolder}",
   "isort.args": ["--profile", "black"]
 }
