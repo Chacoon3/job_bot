@@ -158,6 +158,65 @@ def test_discover_boards_runs_discovery_and_persists_results(monkeypatch) -> Non
     assert session.committed is True
 
 
+def test_discover_boards_by_company_uses_llm_provider(monkeypatch) -> None:
+    session = DummySession()
+    provider = object()
+    captured: dict[str, object] = {}
+    report = DiscoveryReport(boards=[], stats=DiscoveryStats(unique_candidates=1))
+
+    class FakeCompanyDiscoverer:
+        def __init__(self, company_names, llm_provider, config) -> None:
+            captured["company_names"] = company_names
+            captured["llm_provider"] = llm_provider
+            captured["config"] = config
+
+        async def discover(self) -> DiscoveryReport:
+            return report
+
+    app.dependency_overrides[dependencies.get_session] = lambda: session
+    app.dependency_overrides[greenhouse_api.get_llm_provider] = lambda: provider
+    monkeypatch.setattr(
+        greenhouse_api,
+        "GreenhouseCompanyDiscoverer",
+        FakeCompanyDiscoverer,
+    )
+    monkeypatch.setattr(greenhouse_api, "upsert_boards", lambda *_args: 0)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/boards/discover",
+        json={
+            "approach": "company",
+            "company_names": [" Acme ", "Acme", "Example Corp"],
+            "limit": 5,
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert captured["company_names"] == ["Acme", "Example Corp"]
+    assert captured["llm_provider"] is provider
+    assert captured["config"].approach == "company"
+    assert session.committed is True
+
+
+def test_company_discovery_requires_company_names() -> None:
+    app.dependency_overrides[dependencies.get_session] = lambda: DummySession()
+    app.dependency_overrides[greenhouse_api.get_llm_provider] = lambda: object()
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/boards/discover",
+        json={"approach": "company"},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "company_names must contain at least one name" in response.text
+
+
 def test_sync_greenhouse_jobs_fetches_persists_and_commits(monkeypatch) -> None:
     session = DummySession()
     captured: dict[str, object] = {}

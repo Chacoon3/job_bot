@@ -15,7 +15,7 @@ from job_bot.llm import LLMProvider
 
 class FakeLLMProvider(LLMProvider):
     def __init__(self, response: CompanyCareerSites | None = None) -> None:
-        self.model = FakeStructuredModel(response or CompanyCareerSites({}))
+        self.model = FakeStructuredModel(response or CompanyCareerSites(root={}))
 
     def get_model(self):
         return self.model
@@ -25,10 +25,12 @@ class FakeStructuredModel:
     def __init__(self, response: CompanyCareerSites) -> None:
         self.response = response
         self.schema = None
+        self.method = None
         self.messages = None
 
-    def with_structured_output(self, schema):
+    def with_structured_output(self, schema, *, method=None):
         self.schema = schema
+        self.method = method
         return self
 
     async def ainvoke(self, messages):
@@ -37,7 +39,7 @@ class FakeStructuredModel:
 
 
 def test_company_discoverer_calls_llm_provider_for_career_sites() -> None:
-    expected = CompanyCareerSites({"Acme": "https://boards.greenhouse.io/acme"})
+    expected = CompanyCareerSites(root={"Acme": "https://boards.greenhouse.io/acme"})
     provider = FakeLLMProvider(expected)
     discoverer = GreenhouseCompanyDiscoverer(["Acme"], provider)
 
@@ -45,6 +47,7 @@ def test_company_discoverer_calls_llm_provider_for_career_sites() -> None:
 
     assert result == expected.root
     assert provider.model.schema is CompanyCareerSites
+    assert provider.model.method == "function_calling"
     assert provider.model.messages is not None
 
 
@@ -56,7 +59,7 @@ def test_company_discoverer_uses_llm_sites_and_extracts_greenhouse_boards(
         FakeLLMProvider(),
     )
     career_sites = CompanyCareerSites(
-        {"Acme": "https://careers.acme.test", "Other": "https://other.test/jobs"}
+        root={"Acme": "https://careers.acme.test", "Other": "https://other.test/jobs"}
     )
 
     async def fake_find_career_sites():

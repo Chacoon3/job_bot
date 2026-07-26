@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 import httpx
 from bs4 import BeautifulSoup
 from langchain.messages import HumanMessage, SystemMessage
-from pydantic import RootModel
+from pydantic import BaseModel
 
 from job_bot.greenhouse.commoncrawl import CommonCrawlClient, extract_token_from_url
 from job_bot.greenhouse.greenhouse import BoardNameEnricher, GreenhouseVerifier
@@ -23,10 +23,6 @@ from job_bot.greenhouse.models import (
 from job_bot.llm import LLMProvider
 
 
-class CompanyCareerSites(RootModel[dict[str, str | None]]):
-    """Map requested company names to their official job or career websites."""
-
-
 @dataclass
 class CandidateDiscoveryResult:
     """Candidates and source-specific diagnostics produced by a discoverer."""
@@ -36,6 +32,27 @@ class CandidateDiscoveryResult:
     crawl_indexes_used: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     fatal_error: bool = False
+
+
+class CompanyCareerSite(BaseModel):
+    """Structured output for LLM career-site discovery.
+
+    The root dictionary maps company names to their official career/job website URL,
+    or null when no reliable official career site can be found.
+    """
+
+    company_name: str
+    career_site_url: str | None
+
+
+class CompanyCareerSiteList(BaseModel):
+    """Structured output for LLM career-site discovery.
+
+    The root dictionary maps company names to their official career/job website URL,
+    or null when no reliable official career site can be found.
+    """
+
+    items: list[CompanyCareerSite]
 
 
 class GreenhouseDiscoverer(ABC):
@@ -254,8 +271,10 @@ class GreenhouseCompanyDiscoverer(GreenhouseDiscoverer):
         return CandidateDiscoveryResult(candidates=candidates, errors=errors)
 
     async def _find_career_sites(self) -> dict[str, str | None]:
-        model = self.llm_provider.get_model().with_structured_output(CompanyCareerSites)
-        response = await model.ainvoke(
+        model = self.llm_provider.get_model().with_structured_output(
+            CompanyCareerSiteList,
+        )
+        response: CompanyCareerSiteList = await model.ainvoke(
             [
                 SystemMessage(
                     content=(
@@ -268,9 +287,9 @@ class GreenhouseCompanyDiscoverer(GreenhouseDiscoverer):
                 HumanMessage(content=json.dumps(self.company_names)),
             ]
         )
-        if not isinstance(response, CompanyCareerSites):
+        if not isinstance(response, CompanyCareerSiteList):
             raise TypeError(f"Unexpected career website response: {type(response).__name__}")
-        return response.root
+        return {item.company_name: item.career_site_url for item in response.items}
 
     @staticmethod
     async def _find_greenhouse_urls(

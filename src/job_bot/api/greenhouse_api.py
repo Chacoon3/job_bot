@@ -12,7 +12,8 @@ from job_bot.api.dependencies import get_session
 from job_bot.greenhouse.jobs import GreenhouseBoardSyncPolicy, GreenhouseJobSyncService
 from job_bot.greenhouse.models import DiscoveryConfig, DiscoveryReport
 from job_bot.greenhouse.repository import list_boards, upsert_boards
-from job_bot.greenhouse.service import GreenhouseGlobalDiscoverer
+from job_bot.greenhouse.service import GreenhouseCompanyDiscoverer, GreenhouseGlobalDiscoverer
+from job_bot.llm import OpenAILLMProvider
 from job_bot.schemas import GreenhouseBoardSchema
 
 router = APIRouter(prefix="/api", tags=["job_bot"])
@@ -80,10 +81,18 @@ async def get_boards(
 
 @router.post("/boards/discover")
 async def discover_boards(
-    config: DiscoveryConfig,
-    session: Annotated[Session, Depends(get_session)],
+    config: DiscoveryConfig, session: Annotated[Session, Depends(get_session)]
 ) -> DiscoveryReport:
-    report = await GreenhouseGlobalDiscoverer(config).discover()
+    if config.approach == "global":
+        discoverer = GreenhouseGlobalDiscoverer(config)
+    else:
+        discoverer = GreenhouseCompanyDiscoverer(
+            config.company_names or [],
+            OpenAILLMProvider(),
+            config,
+        )
+
+    report = await discoverer.discover()
     upsert_boards(session, report.boards)
     session.commit()
     return report

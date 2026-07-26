@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CrawlIndex(BaseModel):
@@ -97,6 +98,24 @@ class DiscoveryConfig(BaseModel):
 
     # Resolve a human-facing company/board name from the live board HTML.
     enrich_company_names: bool = True
+
+    approach: Literal["global", "company"] = "global"
+
+    company_names: list[str] | None = Field(
+        default=None, description="List of company names to search for when approach is 'company'"
+    )
+
+    @model_validator(mode="after")
+    def validate_company_discovery(self) -> DiscoveryConfig:
+        if self.approach != "company":
+            return self
+
+        names = [name.strip() for name in self.company_names or [] if name.strip()]
+        if not names:
+            raise ValueError("company_names must contain at least one name for company discovery")
+
+        self.company_names = list(dict.fromkeys(names))
+        return self
 
 
 class DiscoveryStats(BaseModel):
