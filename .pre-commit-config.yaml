@@ -13,7 +13,6 @@ repos:
         types: [python]
       - id: pylint
         name: pylint
-        entry: python -m pylint src
+        entry: python -m pylint
         language: system
-        pass_filenames: false
         types: [python]

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Request
 
 from job_bot.db.app_redis import AppRedisAsync
+from job_bot.db.job_models import JobEntry
 from job_bot.flow import (
     ApplicationStatus,
     CandidateProfile,
@@ -29,7 +30,7 @@ def health() -> dict[str, str]:
 
 
 @router.get("/find_jobs")
-def api_find_jobs() -> list[JobEntryResponse]:
+def api_find_jobs() -> list[JobEntry]:
 
     criteria = JobQuery(
         job_title="Software Engineer",
@@ -43,7 +44,7 @@ def api_find_jobs() -> list[JobEntryResponse]:
     )
 
     jobs = find_jobs(criteria)
-    return [JobEntryResponse.from_record(job) for job in jobs]
+    return jobs
 
 
 @router.post("/candidate_profile")
