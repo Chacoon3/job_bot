@@ -38,6 +38,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "black==25.1.0",
+  "isort==6.0.1",
+  "pre-commit==4.2.0",
   "pytest==9.1.1",
   "pytest-cov==7.1.0",
   "pylint==4.0.5",
@@ -65,15 +68,18 @@ where = ["src"]
 [tool.black]
 line-length = 100
 target-version = ["py311"]
+include = '\.pyi?$'
 
 [tool.isort]
 profile = "black"
 line_length = 100
 src_paths = ["src", "tests"]
+py_version = 311
 
 [tool.pylint.main]
 py-version = "3.11"
 fail-under = 6.0
+recursive = true
 
 
 [tool.pylint.messages_control]
