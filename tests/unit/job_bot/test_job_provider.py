@@ -39,7 +39,7 @@ def test_greenhouse_provider_queries_persisted_greenhouse_jobs() -> None:
     assert len(jobs) == 1
     assert jobs[0].job_title == "Software Engineer"
     assert jobs[0].company_name == "Example Corp"
-    assert jobs[0].year_of_experience.minimum == 0
-    assert jobs[0].pay_range.maximum == 0
+    assert jobs[0].year_of_experience == Range(0, 1, bounds="[)")
+    assert jobs[0].pay_range == Range(0, 1, bounds="[)")
     statement = session.execute.call_args.args[0]
     assert "job_entries.source =" in str(statement)

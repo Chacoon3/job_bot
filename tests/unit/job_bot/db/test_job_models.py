@@ -1,15 +1,9 @@
 from __future__ import annotations
 
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.schema import CreateIndex, CreateTable
 
-from job_bot.db.job_models import (
-    JobEntryRecord,
-    db_range_to_interval_values,
-    interval_to_db_range,
-)
-from job_bot.flow import Interval
+from job_bot.db.job_models import JobEntryRecord
 
 
 def test_job_entry_table_uses_postgresql_range_types() -> None:
@@ -28,14 +22,3 @@ def test_job_entry_table_uses_postgresql_range_types() -> None:
     assert any("USING gist (year_of_experience)" in statement for statement in index_ddl)
     assert any("USING gist (pay_range)" in statement for statement in index_ddl)
     assert any("(source)" in statement for statement in index_ddl)
-
-
-def test_inclusive_interval_converts_to_database_range() -> None:
-    value = interval_to_db_range(Interval(minimum=2, maximum=5))
-
-    assert value == Range(2, 5, bounds="[]")
-
-
-def test_canonical_database_range_converts_to_inclusive_values() -> None:
-    assert db_range_to_interval_values(Range(2, 6, bounds="[)")) == (2, 5)
-    assert db_range_to_interval_values(Range(2, 5, bounds="[]")) == (2, 5)

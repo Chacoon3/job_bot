@@ -6,12 +6,11 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.postgresql import Range, insert
 from sqlalchemy.orm import Session
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
-from job_bot.db.job_models import JobEntryRecord, interval_to_db_range
-from job_bot.flow import Interval, JobEntry
+from job_bot.db.job_models import JobEntryRecord
 from job_bot.greenhouse_job_provider import GREENHOUSE_SOURCE
 from job_bot.job_provider import _parse_datetime, logger
 
@@ -69,8 +68,8 @@ class GreenhouseJobSyncService:
         self,
         boards: list[GreenhouseBoard],
         client: httpx.Client,
-    ) -> tuple[list[JobEntry], int]:
-        jobs_by_url: dict[str, JobEntry] = {}
+    ) -> tuple[list[JobEntryRecord], int]:
+        jobs_by_url: dict[str, JobEntryRecord] = {}
         boards_failed = 0
         for board in boards:
             try:
@@ -93,24 +92,24 @@ class GreenhouseJobSyncService:
                 continue
 
             for raw_job in raw_jobs:
-                job = self._to_job_entry(board, raw_job)
+                job = self._to_job_entry_record(board, raw_job)
                 if job is not None:
                     jobs_by_url[job.url] = job
         return list(jobs_by_url.values()), boards_failed
 
-    def _upsert_jobs(self, jobs: list[JobEntry]) -> int:
+    def _upsert_jobs(self, jobs: list[JobEntryRecord]) -> int:
         if not jobs:
             return 0
         values = [
             {
-                "source": GREENHOUSE_SOURCE,
+                "source": job.source,
                 "job_title": job.job_title,
                 "url": job.url,
-                "year_of_experience": interval_to_db_range(job.year_of_experience),
+                "year_of_experience": job.year_of_experience,
                 "company_name": job.company_name,
                 "job_location": job.job_location,
                 "jd_summary": job.jd_summary,
-                "pay_range": interval_to_db_range(job.pay_range),
+                "pay_range": job.pay_range,
                 "date_posted": job.date_posted,
             }
             for job in jobs
@@ -135,7 +134,10 @@ class GreenhouseJobSyncService:
         return len(values)
 
     @staticmethod
-    def _to_job_entry(board: GreenhouseBoard, raw_job: Any) -> JobEntry | None:
+    def _to_job_entry_record(
+        board: GreenhouseBoard,
+        raw_job: Any,
+    ) -> JobEntryRecord | None:
         if not isinstance(raw_job, dict):
             return None
         title = raw_job.get("title")
@@ -153,13 +155,14 @@ class GreenhouseJobSyncService:
             if isinstance(content, str)
             else ""
         )
-        return JobEntry(
+        return JobEntryRecord(
+            source=GREENHOUSE_SOURCE,
             job_title=title.strip(),
             url=url.strip(),
-            year_of_experience=Interval(minimum=0, maximum=0),
+            year_of_experience=Range(0, 0, bounds="[]"),
             company_name=board.company_name or board.token,
             job_location=str(location_name).strip(),
             jd_summary=summary,
-            pay_range=Interval(minimum=0, maximum=0),
+            pay_range=Range(0, 0, bounds="[]"),
             date_posted=_parse_datetime(raw_job.get("updated_at")),
         )
