@@ -17,6 +17,7 @@ google-cloud-secret-manager==2.30.0
 networkx==3.6.1
 python-multipart==0.0.32
 beautifulsoup4==4.15.0
+httpx==0.28.1
 SQLAlchemy==2.0.51
 psycopg[binary]==3.3.4
 alembic==1.18.5

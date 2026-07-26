@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from job_bot.api import dependencies, greenhouse_api
+from job_bot.greenhouse.jobs import GreenhouseJobSyncResult
 from job_bot.greenhouse.models import DiscoveryReport, DiscoveryStats
 from job_bot.main import app
 
@@ -154,4 +155,39 @@ def test_discover_boards_runs_discovery_and_persists_results(monkeypatch) -> Non
     assert config.request_timeout_seconds == 15.5
     assert captured["session"] is session
     assert captured["boards"] == []
+    assert session.committed is True
+
+
+def test_sync_greenhouse_jobs_fetches_persists_and_commits(monkeypatch) -> None:
+    session = DummySession()
+    captured: dict[str, object] = {}
+
+    class FakeSyncService:
+        def __init__(self, received_session) -> None:
+            captured["session"] = received_session
+
+        def sync(self) -> GreenhouseJobSyncResult:
+            return GreenhouseJobSyncResult(
+                boards_queried=4,
+                boards_failed=1,
+                jobs_found=12,
+                jobs_stored=12,
+            )
+
+    app.dependency_overrides[dependencies.get_session] = lambda: session
+    monkeypatch.setattr(greenhouse_api, "GreenhouseJobSyncService", FakeSyncService)
+
+    client = TestClient(app)
+    response = client.post("/api/greenhouse/jobs/sync")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "boards_queried": 4,
+        "boards_failed": 1,
+        "jobs_found": 12,
+        "jobs_stored": 12,
+    }
+    assert captured["session"] is session
     assert session.committed is True

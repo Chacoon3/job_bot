@@ -53,6 +53,7 @@ class JobEntryRecord(Base):
         ),
         Index("idx_job_entries_company_name", "company_name"),
         Index("idx_job_entries_date_posted", "date_posted"),
+        Index("idx_job_entries_source", "source"),
         Index(
             "idx_job_entries_years_experience_gist",
             "year_of_experience",
@@ -66,6 +67,7 @@ class JobEntryRecord(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
     job_title: Mapped[str] = mapped_column(String(512), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
     year_of_experience: Mapped[Range[int]] = mapped_column(INT4RANGE, nullable=False)

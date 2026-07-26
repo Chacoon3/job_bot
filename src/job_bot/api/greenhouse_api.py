@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
+from job_bot.greenhouse.jobs import GreenhouseJobSyncService
 from job_bot.greenhouse.models import DiscoveryConfig, DiscoveryReport
 from job_bot.greenhouse.repository import list_boards, upsert_boards
 from job_bot.greenhouse.service import GreenhouseGlobalDiscoverer
@@ -45,6 +46,13 @@ class GreenhouseBoardListResponse(BaseModel):
     limit: int
     offset: int
     boards: list[GreenhouseBoardResponse]
+
+
+class GreenhouseJobSyncResponse(BaseModel):
+    boards_queried: int
+    boards_failed: int
+    jobs_found: int
+    jobs_stored: int
 
 
 @router.get("/boards")
@@ -95,3 +103,12 @@ async def discover_boards(
     upsert_boards(session, report.boards)
     session.commit()
     return report
+
+
+@router.post("/greenhouse/jobs/sync")
+def sync_greenhouse_jobs(
+    session: Annotated[Session, Depends(get_session)],
+) -> GreenhouseJobSyncResponse:
+    result = GreenhouseJobSyncService(session).sync()
+    session.commit()
+    return GreenhouseJobSyncResponse.model_validate(result, from_attributes=True)

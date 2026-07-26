@@ -22,10 +22,12 @@ def test_job_entry_table_uses_postgresql_range_types() -> None:
 
     assert "year_of_experience INT4RANGE NOT NULL" in ddl
     assert "pay_range INT8RANGE NOT NULL" in ddl
+    assert "source VARCHAR(64) NOT NULL" in ddl
     assert "CONSTRAINT ck_job_entries_experience_finite_nonnegative CHECK" in ddl
     assert "CONSTRAINT ck_job_entries_pay_finite_nonnegative CHECK" in ddl
     assert any("USING gist (year_of_experience)" in statement for statement in index_ddl)
     assert any("USING gist (pay_range)" in statement for statement in index_ddl)
+    assert any("(source)" in statement for statement in index_ddl)
 
 
 def test_inclusive_interval_converts_to_database_range() -> None:

@@ -28,6 +28,7 @@ dependencies = [
   "networkx==3.6.1",
   "python-multipart==0.0.32",
   "beautifulsoup4==4.15.0",
+  "httpx==0.28.1",
   "SQLAlchemy==2.0.51",
   "psycopg[binary]==3.3.4",
   "alembic==1.18.5",
@@ -39,7 +40,6 @@ dependencies = [
 dev = [
   "pytest==9.1.1",
   "pytest-cov==7.1.0",
-  "httpx==0.28.1",
   "pylint==4.0.5",
   "ruff==0.16.0",
 ]
