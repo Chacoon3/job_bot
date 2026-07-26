@@ -16,6 +16,7 @@ Apply a consistent workflow that keeps commits concise, imports predictable, and
 - Reviewing pull requests for style and structure compliance.
 
 ## Procedure
+0. For Python usage, default to use the ./.venv virtual environment unless otherwise necessary.
 1. Identify changed source files under `src/` and expected unit test targets.
 2. Ensure all import statements are top-level in each Python module.
 3. Add or update unit tests in `tests/unit/` and mirror `src/` paths.
