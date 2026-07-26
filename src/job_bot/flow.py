@@ -10,6 +10,7 @@ from langchain.messages import HumanMessage
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
+from job_bot.db.job_models import JobEntry
 from job_bot.llm import OpenAILLMProvider
 from job_bot.openai_client import get_openai_client
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
@@ -17,16 +18,12 @@ from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 logger = structlog.get_logger(__name__)
 
 
-class Interval(BaseModel):
-    minimum: int
-    maximum: int
-
-
 class EducationDegree(BaseModel):
     degree: str
     field_of_study: str
     institution: str
-    duration: Interval
+    duration_minimum: int
+    duration_maximum: int
     gpa: float
 
 
@@ -43,22 +40,13 @@ class CandidateProfile(BaseModel):
     summary: str
 
 
-class JobEntry(BaseModel):
-    job_title: str
-    url: str
-    year_of_experience: Interval
-    company_name: str
-    job_location: str
-    jd_summary: str
-    pay_range: Interval
-    date_posted: datetime | None = None
-
-
 class JobQuery(BaseModel):
     job_title: str
-    year_of_experience: Interval
+    year_of_experience_minimum: int
+    year_of_experience_maximum: int
     job_location: str
-    pay_range: Interval
+    pay_range_minimum: int
+    pay_range_maximum: int
     key_words: list[str]
     posted_since: datetime | None = None
     extra_criteria: list[str] | None = None
@@ -94,7 +82,7 @@ Rules:
 def _build_job_search_prompt(query: JobQuery) -> str:
     posted_since = query.posted_since.isoformat() if query.posted_since else "no restriction"
     experience_range = (
-        f"{query.year_of_experience.minimum} to {query.year_of_experience.maximum} years"
+        f"{query.year_of_experience_minimum} " f"to {query.year_of_experience_maximum} years"
     )
     keywords = ", ".join(query.key_words) or "none"
     extra_criteria = "\n".join(f"- {criterion}" for criterion in query.extra_criteria or [])
@@ -107,7 +95,7 @@ Return up to {query.num_limit} verified jobs for this candidate:
 - Target role: {query.job_title}
 - Acceptable required experience: {experience_range}
 - Location: {query.job_location}
-- Acceptable pay: {query.pay_range.minimum} to {query.pay_range.maximum}
+- Acceptable pay: {query.pay_range_minimum} to {query.pay_range_maximum}
 - Relevant keywords: {keywords}
 - Earliest posting date: {posted_since}
 </search_request>
@@ -171,13 +159,13 @@ def find_jobs(query: JobQuery) -> list[JobEntry]:
             },
         ],
         tools=[{"type": "web_search"}],
-        text_format=JobSearchResponse,
+        text_format=JobEntry,
     )
 
     structured: JobSearchResponse = response.output_parsed
     if not isinstance(structured, JobSearchResponse):
         raise RuntimeError(f"Unexpected response type: {type(structured)}. Actual: {structured}")
-    return structured.jobs
+    return [job for job in structured.jobs]
 
 
 async def apply_job(job_url: str, candidate: CandidateProfile) -> dict[str, object]:
@@ -242,8 +230,19 @@ async def apply_jobs(query: JobQuery, candidate: CandidateProfile) -> list[Appli
             resp = await apply_job(job.url, candidate)
             logger.info("job_application_agent_completed", response=resp)
         except Exception as exc:
-            status.append(ApplicationStatus(job=job, status="failed", message=str(exc)))
+            status.append(
+                ApplicationStatus(
+                    job=job,
+                    status="failed",
+                    message=str(exc),
+                )
+            )
             continue
-        status.append(ApplicationStatus(job=job, status="applied"))
+        status.append(
+            ApplicationStatus(
+                job=job,
+                status="applied",
+            )
+        )
 
     return status

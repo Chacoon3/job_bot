@@ -3,15 +3,14 @@ from __future__ import annotations
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateIndex, CreateTable
 
-from job_bot.db.job_models import JobEntryRecord
+from job_bot.db.job_models import JobEntry
 
 
 def test_job_entry_table_uses_postgresql_range_types() -> None:
     dialect = postgresql.dialect()
-    ddl = str(CreateTable(JobEntryRecord.__table__).compile(dialect=dialect))
+    ddl = str(CreateTable(JobEntry.__table__).compile(dialect=dialect))
     index_ddl = [
-        str(CreateIndex(index).compile(dialect=dialect))
-        for index in JobEntryRecord.__table__.indexes
+        str(CreateIndex(index).compile(dialect=dialect)) for index in JobEntry.__table__.indexes
     ]
 
     assert "year_of_experience INT4RANGE NOT NULL" in ddl

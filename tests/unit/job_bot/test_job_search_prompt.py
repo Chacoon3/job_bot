@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from job_bot.flow import Interval, JobQuery, _build_job_search_prompt
+from job_bot.flow import JobQuery, _build_job_search_prompt
 
 
 def job_query(extra_criteria: list[str] | None = None) -> JobQuery:
     return JobQuery(
         job_title="Senior Python Engineer",
-        year_of_experience=Interval(minimum=4, maximum=8),
+        year_of_experience_minimum=4,
+        year_of_experience_maximum=8,
         job_location="Remote, United States",
-        pay_range=Interval(minimum=150_000, maximum=210_000),
+        pay_range_minimum=150_000,
+        pay_range_maximum=210_000,
         key_words=["Python", "PostgreSQL"],
         posted_since=datetime(2026, 7, 1, tzinfo=UTC),
         extra_criteria=extra_criteria,

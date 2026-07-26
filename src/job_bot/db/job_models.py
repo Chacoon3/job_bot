@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from job_bot.db.base import Base
 
 
-class JobEntryRecord(Base):
+class JobEntry(Base):
     """Persist a normalized job entry independently of its source provider."""
 
     __tablename__ = "job_entries"

@@ -6,12 +6,12 @@ from unittest.mock import Mock
 import pytest
 from sqlalchemy.dialects.postgresql import Range
 
-from job_bot.db.job_models import JobEntryRecord
+from job_bot.db.job_models import JobEntry
 from job_bot.job_provider import GreenHouseJobProvider, JobProvider
 
 
-def _record() -> JobEntryRecord:
-    return JobEntryRecord(
+def _record() -> JobEntry:
+    return JobEntry(
         id=1,
         source="greenhouse",
         job_title="Software Engineer",

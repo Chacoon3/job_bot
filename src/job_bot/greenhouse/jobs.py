@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import Range, insert
 from sqlalchemy.orm import Session
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
-from job_bot.db.job_models import JobEntryRecord
+from job_bot.db.job_models import JobEntry
 from job_bot.greenhouse_job_provider import GREENHOUSE_SOURCE
 from job_bot.job_provider import _parse_datetime, logger
 
@@ -68,8 +68,8 @@ class GreenhouseJobSyncService:
         self,
         boards: list[GreenhouseBoard],
         client: httpx.Client,
-    ) -> tuple[list[JobEntryRecord], int]:
-        jobs_by_url: dict[str, JobEntryRecord] = {}
+    ) -> tuple[list[JobEntry], int]:
+        jobs_by_url: dict[str, JobEntry] = {}
         boards_failed = 0
         for board in boards:
             try:
@@ -97,7 +97,7 @@ class GreenhouseJobSyncService:
                     jobs_by_url[job.url] = job
         return list(jobs_by_url.values()), boards_failed
 
-    def _upsert_jobs(self, jobs: list[JobEntryRecord]) -> int:
+    def _upsert_jobs(self, jobs: list[JobEntry]) -> int:
         if not jobs:
             return 0
         values = [
@@ -114,10 +114,10 @@ class GreenhouseJobSyncService:
             }
             for job in jobs
         ]
-        statement = insert(JobEntryRecord).values(values)
+        statement = insert(JobEntry).values(values)
         excluded = statement.excluded
         statement = statement.on_conflict_do_update(
-            index_elements=[JobEntryRecord.url],
+            index_elements=[JobEntry.url],
             set_={
                 "source": excluded.source,
                 "job_title": excluded.job_title,
@@ -137,7 +137,7 @@ class GreenhouseJobSyncService:
     def _to_job_entry_record(
         board: GreenhouseBoard,
         raw_job: Any,
-    ) -> JobEntryRecord | None:
+    ) -> JobEntry | None:
         if not isinstance(raw_job, dict):
             return None
         title = raw_job.get("title")
@@ -155,7 +155,7 @@ class GreenhouseJobSyncService:
             if isinstance(content, str)
             else ""
         )
-        return JobEntryRecord(
+        return JobEntry(
             source=GREENHOUSE_SOURCE,
             job_title=title.strip(),
             url=url.strip(),

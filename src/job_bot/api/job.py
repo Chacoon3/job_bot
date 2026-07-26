@@ -7,8 +7,7 @@ from job_bot.db.app_redis import AppRedisAsync
 from job_bot.flow import (
     ApplicationStatus,
     CandidateProfile,
-    Interval,
-    JobEntry,
+    JobEntryResponse,
     JobQuery,
     apply_job,
     apply_jobs,
@@ -31,19 +30,21 @@ def health() -> dict[str, str]:
 
 
 @router.get("/find_jobs")
-def api_find_jobs() -> list[JobEntry]:
+def api_find_jobs() -> list[JobEntryResponse]:
 
     criteria = JobQuery(
         job_title="Software Engineer",
-        year_of_experience=Interval(minimum=1, maximum=4),
+        year_of_experience_minimum=1,
+        year_of_experience_maximum=4,
         job_location="United States",
-        pay_range=Interval(minimum=130000, maximum=180000),
+        pay_range_minimum=130000,
+        pay_range_maximum=180000,
         key_words=["Python", "C#", "Cloud", "Agents", "LangChain", "Backend"],
         posted_since=datetime.now() - timedelta(days=30),
     )
 
     jobs = find_jobs(criteria)
-    return jobs
+    return [JobEntryResponse.from_record(job) for job in jobs]
 
 
 @router.post("/candidate_profile")
@@ -112,9 +113,11 @@ async def api_apply_jobs(request: Request) -> list[ApplicationStatus]:
 
     criteria = JobQuery(
         job_title="Software Engineer",
-        year_of_experience=Interval(minimum=1, maximum=4),
+        year_of_experience_minimum=1,
+        year_of_experience_maximum=4,
         job_location="United States",
-        pay_range=Interval(minimum=130000, maximum=180000),
+        pay_range_minimum=130000,
+        pay_range_maximum=180000,
         key_words=["Python", "C#", "Cloud", "Agents", "LangChain", "Backend"],
         posted_since=datetime.now() - timedelta(days=30),
     )

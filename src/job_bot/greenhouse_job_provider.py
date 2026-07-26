@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from job_bot.db.job_models import JobEntryRecord
+from job_bot.db.job_models import JobEntry
 from job_bot.job_provider import JobProvider
 
 GREENHOUSE_SOURCE = "greenhouse"
@@ -16,14 +16,14 @@ class GreenHouseJobProvider(JobProvider):
     ) -> None:
         self.session = session
 
-    def provide(self) -> list[JobEntryRecord]:
+    def provide(self) -> list[JobEntry]:
         return list(
             self.session.execute(
-                select(JobEntryRecord)
-                .where(JobEntryRecord.source == GREENHOUSE_SOURCE)
+                select(JobEntry)
+                .where(JobEntry.source == GREENHOUSE_SOURCE)
                 .order_by(
-                    JobEntryRecord.date_posted.desc().nullslast(),
-                    JobEntryRecord.id.asc(),
+                    JobEntry.date_posted.desc().nullslast(),
+                    JobEntry.id.asc(),
                 )
             )
             .scalars()

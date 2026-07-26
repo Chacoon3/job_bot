@@ -1,11 +1,13 @@
 import asyncio
 from types import SimpleNamespace
 
+from sqlalchemy.dialects.postgresql import Range
+
+from job_bot.db.job_models import JobEntry
 from job_bot.flow import (
     CandidateProfile,
     EducationDegree,
-    Interval,
-    JobEntry,
+    JobEntryResponse,
     apply_job,
 )
 
@@ -59,6 +61,28 @@ class FakeAgent:
         return {"status": "applied"}
 
 
+def test_job_entry_response_round_trips_database_ranges() -> None:
+    response = JobEntryResponse(
+        job_title="Software Engineer",
+        url="https://example.com/jobs/123",
+        year_of_experience_minimum=2,
+        year_of_experience_maximum=5,
+        company_name="Example Corp",
+        job_location="Remote",
+        jd_summary="Build systems",
+        pay_range_minimum=120000,
+        pay_range_maximum=160000,
+    )
+
+    record = response.to_record()
+    restored = JobEntryResponse.from_record(record)
+
+    assert record.source == "openai_web_search"
+    assert record.year_of_experience == Range(2, 5, bounds="[]")
+    assert record.pay_range == Range(120000, 160000, bounds="[]")
+    assert restored == response
+
+
 def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
     playwright_context = FakeAsyncPlaywrightContext()
     fake_agent = FakeAgent()
@@ -76,12 +100,13 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
 
     job = JobEntry(
         job_title="Software Engineer",
+        source="greenhouse",
         url="https://example.com/jobs/123",
-        year_of_experience=Interval(minimum=2, maximum=5),
+        year_of_experience=Range(2, 5, bounds="[]"),
         company_name="Example Corp",
         job_location="Remote",
         jd_summary="Build systems",
-        pay_range=Interval(minimum=120000, maximum=160000),
+        pay_range=Range(120000, 160000, bounds="[]"),
     )
     candidate = CandidateProfile(
         name="Alex Doe",
@@ -95,7 +120,8 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
                 degree="BS",
                 field_of_study="Computer Science",
                 institution="State University",
-                duration=Interval(minimum=4, maximum=4),
+                duration_minimum=4,
+                duration_maximum=4,
                 gpa=3.8,
             )
         ],
