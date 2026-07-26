@@ -58,7 +58,7 @@ class CompanyCareerSiteList(BaseModel):
 class GreenhouseDiscoverer(ABC):
     """Base class for Greenhouse candidate discovery and live verification."""
 
-    user_agent = "GreenhouseDiscovery/0.3 (public-board research; rate-limited)"
+    user_agent = "Mozilla/5.0 GreenhouseBoardResolver/1.0"
 
     def __init__(self, config: DiscoveryConfig | None = None) -> None:
         self.config = config or DiscoveryConfig()
@@ -282,6 +282,7 @@ class GreenhouseCompanyDiscoverer(GreenhouseDiscoverer):
                         "requested company names as dictionary keys and the most direct official "
                         "jobs website URL as values. Use null when no reliable official jobs "
                         "website can be found. Do not return job aggregator URLs."
+                        "You must verify that the Url is valid and reachable. Do not return unsafe values before any network work begins."
                     )
                 ),
                 HumanMessage(content=json.dumps(self.company_names)),
@@ -300,7 +301,9 @@ class GreenhouseCompanyDiscoverer(GreenhouseDiscoverer):
         if extract_token_from_url(website_url) is not None:
             return urls
 
-        response = await client.get(website_url)
+        response = await client.get(
+            website_url, headers={"User-Agent": GreenhouseDiscoverer.user_agent}
+        )
         response.raise_for_status()
         final_url = str(response.url)
         if final_url not in urls:
