@@ -211,6 +211,7 @@ class GreenhouseJobSyncService:
         include_keywords: Sequence[str],
         exclude_keywords: Sequence[str],
     ) -> bool:
+        title_text = job.job_title.casefold()
         searchable_text = " ".join(
             (job.job_title, job.company_name, job.job_location, job.jd_summary)
         ).casefold()
@@ -222,7 +223,7 @@ class GreenhouseJobSyncService:
         )
         if any(keyword in searchable_text for keyword in excluded):
             return False
-        return not included or any(keyword in searchable_text for keyword in included)
+        return not included or any(keyword in title_text for keyword in included)
 
     def _upsert_jobs(self, jobs: list[JobEntry]) -> int:
         values = (

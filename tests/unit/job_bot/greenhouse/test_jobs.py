@@ -160,6 +160,30 @@ def test_keyword_filter_matches_any_include_and_prioritizes_exclusions() -> None
     )
 
 
+def test_positive_keywords_only_match_job_title() -> None:
+    job = JobEntry(
+        source=GREENHOUSE_SOURCE,
+        job_title="Product Manager",
+        url="https://example.com/jobs/2",
+        company_name="Software Industries",
+        job_location="Remote",
+        jd_summary="Partner with engineers and developers.",
+    )
+
+    assert not GreenhouseJobSyncService._matches_keywords(
+        job,
+        include_keywords=["software", "engineer", "developer"],
+        exclude_keywords=[],
+    )
+
+    job.job_title = "Software Product Manager"
+    assert GreenhouseJobSyncService._matches_keywords(
+        job,
+        include_keywords=["software", "engineer", "developer"],
+        exclude_keywords=[],
+    )
+
+
 def test_upsert_jobs_batches_large_syncs() -> None:
     session = Mock()
     batch_size = 5_000
