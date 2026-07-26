@@ -6,11 +6,14 @@ from unittest.mock import Mock
 import httpx
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
+from job_bot.db.job_models import JobEntry
 from job_bot.greenhouse.jobs import (
+    _JOB_UPSERT_BATCH_SIZE,
     GreenhouseBoardSyncPolicy,
     GreenhouseJobSyncService,
     _parse_datetime,
 )
+from job_bot.greenhouse_job_provider import GREENHOUSE_SOURCE
 
 
 def _board() -> GreenhouseBoard:
@@ -89,6 +92,30 @@ def test_sync_rejects_non_positive_board_limit() -> None:
         assert str(exc) == "board_limit must be at least 1"
     else:
         raise AssertionError("Expected a non-positive board limit to be rejected")
+
+
+def test_upsert_jobs_batches_large_syncs() -> None:
+    session = Mock()
+    jobs = [
+        JobEntry(
+            source=GREENHOUSE_SOURCE,
+            job_title=f"Engineer {index}",
+            url=f"https://example.com/jobs/{index}",
+            company_name="Example Corp",
+            job_location="Remote",
+            jd_summary="Build systems.",
+        )
+        for index in range(_JOB_UPSERT_BATCH_SIZE + 1)
+    ]
+
+    jobs_stored = GreenhouseJobSyncService(session, client=Mock())._upsert_jobs(jobs)
+
+    assert jobs_stored == len(jobs)
+    assert session.execute.call_count == 2
+    batch_sizes = [
+        len(call.args[0].compile().params) // 9 for call in session.execute.call_args_list
+    ]
+    assert batch_sizes == [_JOB_UPSERT_BATCH_SIZE, 1]
 
 
 def test_parse_datetime_accepts_iso8601_and_epochs() -> None:
