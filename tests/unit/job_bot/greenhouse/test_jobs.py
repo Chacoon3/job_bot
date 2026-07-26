@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import httpx
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
-from job_bot.greenhouse.jobs import GreenhouseJobSyncService
+from job_bot.greenhouse.jobs import GreenhouseJobSyncService, _parse_datetime
 
 
 def _board() -> GreenhouseBoard:
@@ -59,3 +59,15 @@ def test_sync_fetches_and_upserts_greenhouse_jobs() -> None:
     insert_statement = session.execute.call_args_list[1].args[0]
     assert "ON CONFLICT (url) DO UPDATE" in str(insert_statement)
     assert "greenhouse" in insert_statement.compile().params.values()
+
+
+def test_parse_datetime_accepts_iso8601_and_epochs() -> None:
+    assert _parse_datetime("2026-07-24T12:30:00Z") == datetime(2026, 7, 24, 12, 30, tzinfo=UTC)
+    assert _parse_datetime(1753360200) == datetime(2025, 7, 24, 12, 30, tzinfo=UTC)
+    assert _parse_datetime("1753360200000") == datetime(2025, 7, 24, 12, 30, tzinfo=UTC)
+
+
+def test_parse_datetime_returns_none_for_invalid_values() -> None:
+    assert _parse_datetime(None) is None
+    assert _parse_datetime("") is None
+    assert _parse_datetime("not-a-datetime") is None

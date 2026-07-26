@@ -7,7 +7,6 @@ from job_bot.db.app_redis import AppRedisAsync
 from job_bot.flow import (
     ApplicationStatus,
     CandidateProfile,
-    JobEntryResponse,
     JobQuery,
     apply_job,
     apply_jobs,

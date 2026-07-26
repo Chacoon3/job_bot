@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -12,7 +13,47 @@ from sqlalchemy.orm import Session
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import JobEntry
 from job_bot.greenhouse_job_provider import GREENHOUSE_SOURCE
-from job_bot.job_provider import _parse_datetime, logger
+from job_bot.job_provider import logger
+
+
+def _parse_datetime(raw_value: Any) -> datetime | None:
+    """Parse provider timestamp values into timezone-aware UTC datetimes."""
+    if raw_value is None:
+        return None
+
+    if isinstance(raw_value, datetime):
+        if raw_value.tzinfo is None:
+            return raw_value.replace(tzinfo=UTC)
+        return raw_value.astimezone(UTC)
+
+    if isinstance(raw_value, (int, float)):
+        try:
+            value = float(raw_value)
+            # Some feeds publish Unix milliseconds while others use seconds.
+            if abs(value) >= 1_000_000_000_000:
+                value = value / 1000
+            return datetime.fromtimestamp(value, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+
+    if isinstance(raw_value, str):
+        text = raw_value.strip()
+        if not text:
+            return None
+
+        if text.isdigit():
+            return _parse_datetime(int(text))
+
+        normalized = text.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+
+    return None
 
 
 @dataclass(frozen=True)
