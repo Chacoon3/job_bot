@@ -1,9 +1,15 @@
 import hashlib
 from datetime import datetime, timedelta
+from typing import Annotated
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from job_bot.api.dependencies import get_session
 from job_bot.db.app_redis import AppRedisAsync
+from job_bot.db.job_models import JobEntry
+from job_bot.db.upsert import batched_upsert
 from job_bot.flow import (
     ApplicationStatus,
     CandidateProfile,
@@ -12,11 +18,18 @@ from job_bot.flow import (
     apply_jobs,
     find_jobs,
 )
+from job_bot.job_providers.llm_job_provider import LLMJobProvider
+from job_bot.llm import OpenAILLMProvider
 from job_bot.resume_parser import parse_resume
 from job_bot.schemas import JobEntrySchema
 from job_bot.utils.file_upload import parse_pure_text_pdf
 
 router = APIRouter(prefix="/api", tags=["job_bot"])
+
+
+class LoadJobQuery(BaseModel):
+    company_names: list[str]
+    earliest_post_date: datetime | None = None
 
 
 @router.get("/")
@@ -27,6 +40,53 @@ def root() -> dict[str, str]:
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "healthy"}
+
+
+@router.post("/jobs/load")
+def load_jobs(
+    query: LoadJobQuery, session: Annotated[Session, Depends(get_session)]
+) -> list[JobEntrySchema]:
+    job_provider = LLMJobProvider(
+        company_names=query.company_names,
+        llm_provider=OpenAILLMProvider(),
+        earliest_post_date=query.earliest_post_date or datetime.now() - timedelta(days=30),
+    )
+    jobs = job_provider.provide()
+    jobs = [job.model_copy(update={"source": "llm"}) for job in jobs]
+    records = [job.to_orm_model() for job in jobs]
+    batched_upsert(
+        session,
+        JobEntry,
+        (
+            {
+                "source": record.source,
+                "job_title": record.job_title,
+                "url": record.url,
+                "year_of_experience": record.year_of_experience,
+                "company_name": record.company_name,
+                "job_location": record.job_location,
+                "jd_summary": record.jd_summary,
+                "pay_range": record.pay_range,
+                "date_posted": record.date_posted,
+            }
+            for record in records
+        ),
+        conflict_columns=[JobEntry.url],
+        update_columns=[
+            JobEntry.source,
+            JobEntry.job_title,
+            JobEntry.year_of_experience,
+            JobEntry.company_name,
+            JobEntry.job_location,
+            JobEntry.jd_summary,
+            JobEntry.pay_range,
+            JobEntry.date_posted,
+            JobEntry.updated_at,
+        ],
+    )
+    session.commit()
+
+    return jobs
 
 
 @router.get("/find_jobs")

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from job_bot.greenhouse.service import CompanyCareerSite, CompanyCareerSiteList
-from job_bot.llm_job_provider import JobEntryList, LLMJobProvider
+from job_bot.job_providers.llm_job_provider import JobEntryList, LLMJobProvider
 from job_bot.schemas import JobEntrySchema
 
 
