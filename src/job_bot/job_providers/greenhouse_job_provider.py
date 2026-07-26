@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from job_bot.db.job_models import JobEntry
-from job_bot.job_provider import JobProvider
+from job_bot.job_providers.job_provider import JobProvider
 from job_bot.schemas import JobEntrySchema
 
 GREENHOUSE_SOURCE = "greenhouse"

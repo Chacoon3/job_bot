@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright
 from pydantic import BaseModel
 
 from job_bot.greenhouse.service import CompanyCareerSiteList
-from job_bot.job_provider import JobProvider
+from job_bot.job_providers.job_provider import JobProvider
 from job_bot.llm import LLMProvider
 from job_bot.schemas import JobEntrySchema
 

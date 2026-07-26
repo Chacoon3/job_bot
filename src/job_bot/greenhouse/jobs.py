@@ -11,12 +11,12 @@ from bs4 import BeautifulSoup
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.orm import Session
+from structlog.stdlib import get_logger
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import JobEntry
 from job_bot.db.upsert import batched_upsert
-from job_bot.greenhouse_job_provider import GREENHOUSE_SOURCE
-from job_bot.job_provider import logger
+from job_bot.job_providers.greenhouse_job_provider import GREENHOUSE_SOURCE
 
 GREENHOUSE_JOB_MAX_AGE = timedelta(days=30)
 
@@ -165,6 +165,7 @@ class GreenhouseJobSyncService:
         exclude_keywords: Sequence[str] = (),
     ) -> tuple[list[JobEntry], int]:
         jobs_by_url: dict[str, JobEntry] = {}
+        logger = get_logger(__name__)
         boards_failed = 0
         for board in boards:
             try:
