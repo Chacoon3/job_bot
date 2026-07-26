@@ -1,15 +1,12 @@
 import asyncio
 from types import SimpleNamespace
 
-from sqlalchemy.dialects.postgresql import Range
-
-from job_bot.db.job_models import JobEntry
 from job_bot.flow import (
     CandidateProfile,
     EducationDegree,
-    JobEntryResponse,
     apply_job,
 )
+from job_bot.schemas import JobEntrySchema
 
 
 class FakeAsyncPlaywrightContext:
@@ -61,28 +58,6 @@ class FakeAgent:
         return {"status": "applied"}
 
 
-def test_job_entry_response_round_trips_database_ranges() -> None:
-    response = JobEntryResponse(
-        job_title="Software Engineer",
-        url="https://example.com/jobs/123",
-        year_of_experience_minimum=2,
-        year_of_experience_maximum=5,
-        company_name="Example Corp",
-        job_location="Remote",
-        jd_summary="Build systems",
-        pay_range_minimum=120000,
-        pay_range_maximum=160000,
-    )
-
-    record = response.to_record()
-    restored = JobEntryResponse.from_record(record)
-
-    assert record.source == "openai_web_search"
-    assert record.year_of_experience == Range(2, 5, bounds="[]")
-    assert record.pay_range == Range(120000, 160000, bounds="[]")
-    assert restored == response
-
-
 def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
     playwright_context = FakeAsyncPlaywrightContext()
     fake_agent = FakeAgent()
@@ -98,15 +73,17 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
     monkeypatch.setattr("job_bot.flow.OpenAILLMProvider", FakeModelProvider)
     monkeypatch.setattr("job_bot.flow.create_agent", fake_create_agent)
 
-    job = JobEntry(
+    job = JobEntrySchema(
         job_title="Software Engineer",
         source="greenhouse",
         url="https://example.com/jobs/123",
-        year_of_experience=Range(2, 5, bounds="[]"),
+        year_of_experience_minimum=2,
+        year_of_experience_maximum=5,
         company_name="Example Corp",
         job_location="Remote",
         jd_summary="Build systems",
-        pay_range=Range(120000, 160000, bounds="[]"),
+        pay_range_minimum=120000,
+        pay_range_maximum=160000,
     )
     candidate = CandidateProfile(
         name="Alex Doe",

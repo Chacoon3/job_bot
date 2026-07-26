@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from job_bot.db.job_models import JobEntry
 from job_bot.job_provider import JobProvider
+from job_bot.schemas import JobEntrySchema
 
 GREENHOUSE_SOURCE = "greenhouse"
 
@@ -16,8 +17,8 @@ class GreenHouseJobProvider(JobProvider):
     ) -> None:
         self.session = session
 
-    def provide(self) -> list[JobEntry]:
-        return list(
+    def provide(self) -> list[JobEntrySchema]:
+        jobs = (
             self.session.execute(
                 select(JobEntry)
                 .where(JobEntry.source == GREENHOUSE_SOURCE)
@@ -29,3 +30,4 @@ class GreenHouseJobProvider(JobProvider):
             .scalars()
             .all()
         )
+        return [JobEntrySchema.from_orm_model(job) for job in jobs]

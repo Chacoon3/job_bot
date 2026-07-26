@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
@@ -13,6 +13,7 @@ from job_bot.greenhouse.jobs import GreenhouseJobSyncService
 from job_bot.greenhouse.models import DiscoveryConfig, DiscoveryReport
 from job_bot.greenhouse.repository import list_boards, upsert_boards
 from job_bot.greenhouse.service import GreenhouseGlobalDiscoverer
+from job_bot.schemas import GreenhouseBoardSchema
 
 router = APIRouter(prefix="/api", tags=["job_bot"])
 
@@ -24,28 +25,11 @@ class BoardSortBy(StrEnum):
     TOKEN = "token"
 
 
-class GreenhouseBoardResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    token: str
-    company_name: str | None
-    board_url: str
-    api_url: str
-    active_job_count: int
-    sample_job_titles: list[str]
-    discovered_urls: list[str]
-    crawl_indexes: list[str]
-    verified_at: datetime
-    created_at: datetime
-    updated_at: datetime
-
-
 class GreenhouseBoardListResponse(BaseModel):
     total: int
     limit: int
     offset: int
-    boards: list[GreenhouseBoardResponse]
+    boards: list[GreenhouseBoardSchema]
 
 
 class GreenhouseJobSyncResponse(BaseModel):
@@ -90,7 +74,7 @@ async def get_boards(
         total=total,
         limit=limit,
         offset=offset,
-        boards=[GreenhouseBoardResponse.model_validate(board) for board in boards],
+        boards=[GreenhouseBoardSchema.from_orm_model(board) for board in boards],
     )
 
 

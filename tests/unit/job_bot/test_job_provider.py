@@ -7,7 +7,9 @@ import pytest
 from sqlalchemy.dialects.postgresql import Range
 
 from job_bot.db.job_models import JobEntry
-from job_bot.job_provider import GreenHouseJobProvider, JobProvider
+from job_bot.greenhouse_job_provider import GreenHouseJobProvider
+from job_bot.job_provider import JobProvider
+from job_bot.schemas import JobEntrySchema
 
 
 def _record() -> JobEntry:
@@ -37,9 +39,12 @@ def test_greenhouse_provider_queries_persisted_greenhouse_jobs() -> None:
     jobs = GreenHouseJobProvider(session).provide()
 
     assert len(jobs) == 1
+    assert isinstance(jobs[0], JobEntrySchema)
     assert jobs[0].job_title == "Software Engineer"
     assert jobs[0].company_name == "Example Corp"
-    assert jobs[0].year_of_experience == Range(0, 1, bounds="[)")
-    assert jobs[0].pay_range == Range(0, 1, bounds="[)")
+    assert jobs[0].year_of_experience_minimum == 0
+    assert jobs[0].year_of_experience_maximum == 1
+    assert jobs[0].pay_range_minimum == 0
+    assert jobs[0].pay_range_maximum == 1
     statement = session.execute.call_args.args[0]
     assert "job_entries.source =" in str(statement)

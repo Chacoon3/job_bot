@@ -3,16 +3,16 @@ repos:
     hooks:
       - id: black
         name: black
-        entry: python -m black
+        entry: .venv/Scripts/python.exe -m black
         language: system
         types: [python]
       - id: isort
         name: isort
-        entry: python -m isort
+        entry: .venv/Scripts/python.exe -m isort
         language: system
         types: [python]
       - id: pylint
         name: pylint
-        entry: python -m pylint
+        entry: .venv/Scripts/python.exe -m pylint
         language: system
         types: [python]

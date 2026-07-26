@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Request
 
 from job_bot.db.app_redis import AppRedisAsync
-from job_bot.db.job_models import JobEntry
 from job_bot.flow import (
     ApplicationStatus,
     CandidateProfile,
@@ -14,6 +13,7 @@ from job_bot.flow import (
     find_jobs,
 )
 from job_bot.resume_parser import parse_resume
+from job_bot.schemas import JobEntrySchema
 from job_bot.utils.file_upload import parse_pure_text_pdf
 
 router = APIRouter(prefix="/api", tags=["job_bot"])
@@ -30,7 +30,7 @@ def health() -> dict[str, str]:
 
 
 @router.get("/find_jobs")
-def api_find_jobs() -> list[JobEntry]:
+def api_find_jobs() -> list[JobEntrySchema]:
 
     criteria = JobQuery(
         job_title="Software Engineer",

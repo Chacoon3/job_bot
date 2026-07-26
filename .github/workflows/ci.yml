@@ -61,7 +61,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements-dev.txt
+          mkdir -p .venv/Scripts
+          ln -s ../bin/python .venv/Scripts/python.exe
 
       - name: Run pre-commit checks on changed files
         env:

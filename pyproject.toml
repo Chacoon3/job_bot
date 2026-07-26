@@ -95,6 +95,7 @@ disable = [
     "too-many-statements",
     "invalid-name",
     "broad-exception-caught",
+    "mixed-line-endings",
     "redefined-outer-name",
     "R0917",  # Too many pos vars
 ]

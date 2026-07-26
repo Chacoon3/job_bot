@@ -10,9 +10,9 @@ from langchain.messages import HumanMessage
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
-from job_bot.db.job_models import JobEntry
 from job_bot.llm import OpenAILLMProvider
 from job_bot.openai_client import get_openai_client
+from job_bot.schemas import JobEntrySchema
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 
 logger = structlog.get_logger(__name__)
@@ -54,13 +54,13 @@ class JobQuery(BaseModel):
 
 
 class ApplicationStatus(BaseModel):
-    job: JobEntry
+    job: JobEntrySchema
     status: Literal["applied", "failed"]
     message: str | None = None
 
 
 class JobSearchResponse(BaseModel):
-    jobs: list[JobEntry] = Field(default_factory=list)
+    jobs: list[JobEntrySchema] = Field(default_factory=list)
 
 
 SYSTEM_PROMPT = """
@@ -139,7 +139,7 @@ For every returned job:
 """.strip()
 
 
-def find_jobs(query: JobQuery) -> list[JobEntry]:
+def find_jobs(query: JobQuery) -> list[JobEntrySchema]:
     model_name = os.getenv("JOB_BOT_LLM_MODEL", "gpt-5.4-nano")
     client = get_openai_client()
     prompt = _build_job_search_prompt(query)
@@ -159,13 +159,13 @@ def find_jobs(query: JobQuery) -> list[JobEntry]:
             },
         ],
         tools=[{"type": "web_search"}],
-        text_format=JobEntry,
+        text_format=JobSearchResponse,
     )
 
     structured: JobSearchResponse = response.output_parsed
     if not isinstance(structured, JobSearchResponse):
         raise RuntimeError(f"Unexpected response type: {type(structured)}. Actual: {structured}")
-    return [job for job in structured.jobs]
+    return list(structured.jobs)
 
 
 async def apply_job(job_url: str, candidate: CandidateProfile) -> dict[str, object]:
