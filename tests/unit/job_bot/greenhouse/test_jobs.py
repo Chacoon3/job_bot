@@ -6,7 +6,11 @@ from unittest.mock import Mock
 import httpx
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
-from job_bot.greenhouse.jobs import GreenhouseJobSyncService, _parse_datetime
+from job_bot.greenhouse.jobs import (
+    GreenhouseBoardSyncPolicy,
+    GreenhouseJobSyncService,
+    _parse_datetime,
+)
 
 
 def _board() -> GreenhouseBoard:
@@ -59,6 +63,32 @@ def test_sync_fetches_and_upserts_greenhouse_jobs() -> None:
     insert_statement = session.execute.call_args_list[1].args[0]
     assert "ON CONFLICT (url) DO UPDATE" in str(insert_statement)
     assert "greenhouse" in insert_statement.compile().params.values()
+
+
+def test_sync_applies_board_policy_and_limit() -> None:
+    session = Mock()
+    session.execute.return_value.scalars.return_value.all.return_value = []
+
+    GreenhouseJobSyncService(session, client=Mock()).sync(
+        policy=GreenhouseBoardSyncPolicy.MOST_JOBS,
+        board_limit=5,
+    )
+
+    select_statement = session.execute.call_args.args[0]
+    compiled = str(select_statement.compile(compile_kwargs={"literal_binds": True}))
+    assert "active_job_count DESC" in compiled
+    assert "LIMIT 5" in compiled
+
+
+def test_sync_rejects_non_positive_board_limit() -> None:
+    session = Mock()
+
+    try:
+        GreenhouseJobSyncService(session, client=Mock()).sync(board_limit=0)
+    except ValueError as exc:
+        assert str(exc) == "board_limit must be at least 1"
+    else:
+        raise AssertionError("Expected a non-positive board limit to be rejected")
 
 
 def test_parse_datetime_accepts_iso8601_and_epochs() -> None:

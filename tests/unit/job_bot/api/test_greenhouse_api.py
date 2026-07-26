@@ -166,7 +166,8 @@ def test_sync_greenhouse_jobs_fetches_persists_and_commits(monkeypatch) -> None:
         def __init__(self, received_session) -> None:
             captured["session"] = received_session
 
-        def sync(self) -> GreenhouseJobSyncResult:
+        def sync(self, **kwargs) -> GreenhouseJobSyncResult:
+            captured.update(kwargs)
             return GreenhouseJobSyncResult(
                 boards_queried=4,
                 boards_failed=1,
@@ -178,7 +179,10 @@ def test_sync_greenhouse_jobs_fetches_persists_and_commits(monkeypatch) -> None:
     monkeypatch.setattr(greenhouse_api, "GreenhouseJobSyncService", FakeSyncService)
 
     client = TestClient(app)
-    response = client.post("/api/greenhouse/jobs/sync")
+    response = client.post(
+        "/api/greenhouse/jobs/sync",
+        params={"policy": "most_jobs", "board_limit": 2},
+    )
 
     app.dependency_overrides.clear()
 
@@ -190,4 +194,6 @@ def test_sync_greenhouse_jobs_fetches_persists_and_commits(monkeypatch) -> None:
         "jobs_stored": 12,
     }
     assert captured["session"] is session
+    assert captured["policy"] == "most_jobs"
+    assert captured["board_limit"] == 2
     assert session.committed is True

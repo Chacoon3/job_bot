@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
-from job_bot.greenhouse.jobs import GreenhouseJobSyncService
+from job_bot.greenhouse.jobs import GreenhouseBoardSyncPolicy, GreenhouseJobSyncService
 from job_bot.greenhouse.models import DiscoveryConfig, DiscoveryReport
 from job_bot.greenhouse.repository import list_boards, upsert_boards
 from job_bot.greenhouse.service import GreenhouseGlobalDiscoverer
@@ -92,7 +92,12 @@ async def discover_boards(
 @router.post("/greenhouse/jobs/sync")
 def sync_greenhouse_jobs(
     session: Annotated[Session, Depends(get_session)],
+    policy: GreenhouseBoardSyncPolicy = GreenhouseBoardSyncPolicy.RECENTLY_UPDATED,
+    board_limit: int | None = Query(default=None, ge=1),
 ) -> GreenhouseJobSyncResponse:
-    result = GreenhouseJobSyncService(session).sync()
+    result = GreenhouseJobSyncService(session).sync(
+        policy=policy,
+        board_limit=board_limit,
+    )
     session.commit()
     return GreenhouseJobSyncResponse.model_validate(result, from_attributes=True)

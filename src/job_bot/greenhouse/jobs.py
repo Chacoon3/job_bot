@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import Range, insert
 from sqlalchemy.orm import Session
 
@@ -64,6 +65,15 @@ class GreenhouseJobSyncResult:
     jobs_stored: int
 
 
+class GreenhouseBoardSyncPolicy(StrEnum):
+    """Define how boards are prioritized for a Greenhouse job sync."""
+
+    RECENTLY_UPDATED = "recently_updated"
+    MOST_JOBS = "most_jobs"
+    FEWEST_JOBS = "fewest_jobs"
+    RANDOM = "random"
+
+
 class GreenhouseJobSyncService:
     """Fetch active Greenhouse boards and upsert normalized jobs into storage."""
 
@@ -78,16 +88,37 @@ class GreenhouseJobSyncService:
         self.client = client
         self.request_timeout_seconds = request_timeout_seconds
 
-    def sync(self) -> GreenhouseJobSyncResult:
-        boards = list(
-            self.session.execute(
-                select(GreenhouseBoard)
-                .where(GreenhouseBoard.active_job_count > 0)
-                .order_by(GreenhouseBoard.updated_at.desc(), GreenhouseBoard.id.asc())
-            )
-            .scalars()
-            .all()
+    def sync(
+        self,
+        *,
+        policy: GreenhouseBoardSyncPolicy = GreenhouseBoardSyncPolicy.RECENTLY_UPDATED,
+        board_limit: int | None = None,
+    ) -> GreenhouseJobSyncResult:
+        if board_limit is not None and board_limit < 1:
+            raise ValueError("board_limit must be at least 1")
+
+        order_by = {
+            GreenhouseBoardSyncPolicy.RECENTLY_UPDATED: (
+                GreenhouseBoard.updated_at.desc(),
+                GreenhouseBoard.id.asc(),
+            ),
+            GreenhouseBoardSyncPolicy.MOST_JOBS: (
+                GreenhouseBoard.active_job_count.desc(),
+                GreenhouseBoard.id.asc(),
+            ),
+            GreenhouseBoardSyncPolicy.FEWEST_JOBS: (
+                GreenhouseBoard.active_job_count.asc(),
+                GreenhouseBoard.id.asc(),
+            ),
+            GreenhouseBoardSyncPolicy.RANDOM: (func.random(),),
+        }[policy]
+        statement = (
+            select(GreenhouseBoard).where(GreenhouseBoard.active_job_count > 0).order_by(*order_by)
         )
+        if board_limit is not None:
+            statement = statement.limit(board_limit)
+
+        boards = list(self.session.execute(statement).scalars().all())
         if self.client is not None:
             jobs, boards_failed = self._fetch_jobs(boards, self.client)
         else:
