@@ -8,7 +8,6 @@ import httpx
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import JobEntry
 from job_bot.greenhouse.jobs import (
-    _JOB_UPSERT_BATCH_SIZE,
     GreenhouseBoardSyncPolicy,
     GreenhouseJobSyncService,
     _parse_datetime,
@@ -96,6 +95,7 @@ def test_sync_rejects_non_positive_board_limit() -> None:
 
 def test_upsert_jobs_batches_large_syncs() -> None:
     session = Mock()
+    batch_size = 5_000
     jobs = [
         JobEntry(
             source=GREENHOUSE_SOURCE,
@@ -105,7 +105,7 @@ def test_upsert_jobs_batches_large_syncs() -> None:
             job_location="Remote",
             jd_summary="Build systems.",
         )
-        for index in range(_JOB_UPSERT_BATCH_SIZE + 1)
+        for index in range(batch_size + 1)
     ]
 
     jobs_stored = GreenhouseJobSyncService(session, client=Mock())._upsert_jobs(jobs)
@@ -115,7 +115,7 @@ def test_upsert_jobs_batches_large_syncs() -> None:
     batch_sizes = [
         len(call.args[0].compile().params) // 9 for call in session.execute.call_args_list
     ]
-    assert batch_sizes == [_JOB_UPSERT_BATCH_SIZE, 1]
+    assert batch_sizes == [batch_size, 1]
 
 
 def test_parse_datetime_accepts_iso8601_and_epochs() -> None:

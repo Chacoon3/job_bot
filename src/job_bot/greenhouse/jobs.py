@@ -8,15 +8,14 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import Range, insert
+from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.orm import Session
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import JobEntry
+from job_bot.db.upsert import batched_upsert
 from job_bot.greenhouse_job_provider import GREENHOUSE_SOURCE
 from job_bot.job_provider import logger
-
-_JOB_UPSERT_BATCH_SIZE = 5_000
 
 
 def _parse_datetime(raw_value: Any) -> datetime | None:
@@ -172,43 +171,37 @@ class GreenhouseJobSyncService:
         return list(jobs_by_url.values()), boards_failed
 
     def _upsert_jobs(self, jobs: list[JobEntry]) -> int:
-        if not jobs:
-            return 0
-
-        for start in range(0, len(jobs), _JOB_UPSERT_BATCH_SIZE):
-            values = [
-                {
-                    "source": job.source,
-                    "job_title": job.job_title,
-                    "url": job.url,
-                    "year_of_experience": job.year_of_experience,
-                    "company_name": job.company_name,
-                    "job_location": job.job_location,
-                    "jd_summary": job.jd_summary,
-                    "pay_range": job.pay_range,
-                    "date_posted": job.date_posted,
-                }
-                for job in jobs[start : start + _JOB_UPSERT_BATCH_SIZE]
-            ]
-            statement = insert(JobEntry).values(values)
-            excluded = statement.excluded
-            statement = statement.on_conflict_do_update(
-                index_elements=[JobEntry.url],
-                set_={
-                    "source": excluded.source,
-                    "job_title": excluded.job_title,
-                    "year_of_experience": excluded.year_of_experience,
-                    "company_name": excluded.company_name,
-                    "job_location": excluded.job_location,
-                    "jd_summary": excluded.jd_summary,
-                    "pay_range": excluded.pay_range,
-                    "date_posted": excluded.date_posted,
-                    "updated_at": excluded.updated_at,
-                },
-            )
-            self.session.execute(statement)
-
-        return len(jobs)
+        values = (
+            {
+                "source": job.source,
+                "job_title": job.job_title,
+                "url": job.url,
+                "year_of_experience": job.year_of_experience,
+                "company_name": job.company_name,
+                "job_location": job.job_location,
+                "jd_summary": job.jd_summary,
+                "pay_range": job.pay_range,
+                "date_posted": job.date_posted,
+            }
+            for job in jobs
+        )
+        return batched_upsert(
+            self.session,
+            JobEntry,
+            values,
+            conflict_columns=[JobEntry.url],
+            update_columns=[
+                JobEntry.source,
+                JobEntry.job_title,
+                JobEntry.year_of_experience,
+                JobEntry.company_name,
+                JobEntry.job_location,
+                JobEntry.jd_summary,
+                JobEntry.pay_range,
+                JobEntry.date_posted,
+                JobEntry.updated_at,
+            ],
+        )
 
     @staticmethod
     def _to_job_entry_record(
