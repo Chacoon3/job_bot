@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -16,6 +17,8 @@ from job_bot.db.job_models import JobEntry
 from job_bot.db.upsert import batched_upsert
 from job_bot.greenhouse_job_provider import GREENHOUSE_SOURCE
 from job_bot.job_provider import logger
+
+GREENHOUSE_JOB_MAX_AGE = timedelta(days=30)
 
 
 def _parse_datetime(raw_value: Any) -> datetime | None:
@@ -94,6 +97,8 @@ class GreenhouseJobSyncService:
         *,
         policy: GreenhouseBoardSyncPolicy = GreenhouseBoardSyncPolicy.RECENTLY_UPDATED,
         board_limit: int | None = None,
+        include_keywords: Sequence[str] = (),
+        exclude_keywords: Sequence[str] = (),
     ) -> GreenhouseJobSyncResult:
         if board_limit is not None and board_limit < 1:
             raise ValueError("board_limit must be at least 1")
@@ -120,14 +125,27 @@ class GreenhouseJobSyncService:
             statement = statement.limit(board_limit)
 
         boards = list(self.session.execute(statement).scalars().all())
+        posted_after = datetime.now(UTC) - GREENHOUSE_JOB_MAX_AGE
         if self.client is not None:
-            jobs, boards_failed = self._fetch_jobs(boards, self.client)
+            jobs, boards_failed = self._fetch_jobs(
+                boards,
+                self.client,
+                posted_after=posted_after,
+                include_keywords=include_keywords,
+                exclude_keywords=exclude_keywords,
+            )
         else:
             with httpx.Client(
                 timeout=self.request_timeout_seconds,
                 follow_redirects=True,
             ) as client:
-                jobs, boards_failed = self._fetch_jobs(boards, client)
+                jobs, boards_failed = self._fetch_jobs(
+                    boards,
+                    client,
+                    posted_after=posted_after,
+                    include_keywords=include_keywords,
+                    exclude_keywords=exclude_keywords,
+                )
 
         jobs_stored = self._upsert_jobs(jobs)
         return GreenhouseJobSyncResult(
@@ -141,6 +159,10 @@ class GreenhouseJobSyncService:
         self,
         boards: list[GreenhouseBoard],
         client: httpx.Client,
+        *,
+        posted_after: datetime,
+        include_keywords: Sequence[str] = (),
+        exclude_keywords: Sequence[str] = (),
     ) -> tuple[list[JobEntry], int]:
         jobs_by_url: dict[str, JobEntry] = {}
         boards_failed = 0
@@ -166,9 +188,41 @@ class GreenhouseJobSyncService:
 
             for raw_job in raw_jobs:
                 job = self._to_job_entry_record(board, raw_job)
-                if job is not None:
+                if (
+                    job is not None
+                    and self._is_recent(job, posted_after)
+                    and self._matches_keywords(
+                        job,
+                        include_keywords=include_keywords,
+                        exclude_keywords=exclude_keywords,
+                    )
+                ):
                     jobs_by_url[job.url] = job
         return list(jobs_by_url.values()), boards_failed
+
+    @staticmethod
+    def _is_recent(job: JobEntry, posted_after: datetime) -> bool:
+        return job.date_posted is not None and job.date_posted >= posted_after
+
+    @staticmethod
+    def _matches_keywords(
+        job: JobEntry,
+        *,
+        include_keywords: Sequence[str],
+        exclude_keywords: Sequence[str],
+    ) -> bool:
+        searchable_text = " ".join(
+            (job.job_title, job.company_name, job.job_location, job.jd_summary)
+        ).casefold()
+        included = tuple(
+            keyword.strip().casefold() for keyword in include_keywords if keyword.strip()
+        )
+        excluded = tuple(
+            keyword.strip().casefold() for keyword in exclude_keywords if keyword.strip()
+        )
+        if any(keyword in searchable_text for keyword in excluded):
+            return False
+        return not included or any(keyword in searchable_text for keyword in included)
 
     def _upsert_jobs(self, jobs: list[JobEntry]) -> int:
         values = (

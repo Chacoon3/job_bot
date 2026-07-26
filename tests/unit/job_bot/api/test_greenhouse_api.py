@@ -181,7 +181,13 @@ def test_sync_greenhouse_jobs_fetches_persists_and_commits(monkeypatch) -> None:
     client = TestClient(app)
     response = client.post(
         "/api/greenhouse/jobs/sync",
-        params={"policy": "most_jobs", "board_limit": 2},
+        params=[
+            ("policy", "most_jobs"),
+            ("board_limit", "2"),
+            ("include_keywords", "python"),
+            ("include_keywords", "backend"),
+            ("exclude_keywords", "staffing"),
+        ],
     )
 
     app.dependency_overrides.clear()
@@ -196,4 +202,6 @@ def test_sync_greenhouse_jobs_fetches_persists_and_commits(monkeypatch) -> None:
     assert captured["session"] is session
     assert captured["policy"] == "most_jobs"
     assert captured["board_limit"] == 2
+    assert captured["include_keywords"] == ["python", "backend"]
+    assert captured["exclude_keywords"] == ["staffing"]
     assert session.committed is True

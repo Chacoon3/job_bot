@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
 import httpx
@@ -46,7 +46,7 @@ def test_sync_fetches_and_upserts_greenhouse_jobs() -> None:
                         "absolute_url": "https://job-boards.greenhouse.io/example/jobs/123",
                         "location": {"name": "Remote"},
                         "content": "<p>Build reliable systems.</p>",
-                        "updated_at": "2026-07-24T12:30:00Z",
+                        "updated_at": datetime.now(UTC).isoformat(),
                     }
                 ]
             },
@@ -91,6 +91,73 @@ def test_sync_rejects_non_positive_board_limit() -> None:
         assert str(exc) == "board_limit must be at least 1"
     else:
         raise AssertionError("Expected a non-positive board limit to be rejected")
+
+
+def test_sync_filters_old_undated_and_keyword_mismatched_jobs() -> None:
+    now = datetime.now(UTC)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "jobs": [
+                    {
+                        "title": "Senior Python Engineer",
+                        "absolute_url": "https://example.com/jobs/recent",
+                        "content": "<p>Build APIs. No staffing agencies.</p>",
+                        "updated_at": (now - timedelta(days=5)).isoformat(),
+                    },
+                    {
+                        "title": "Senior Python Engineer",
+                        "absolute_url": "https://example.com/jobs/old",
+                        "updated_at": (now - timedelta(days=31)).isoformat(),
+                    },
+                    {
+                        "title": "Senior Python Engineer",
+                        "absolute_url": "https://example.com/jobs/undated",
+                    },
+                    {
+                        "title": "Java Engineer",
+                        "absolute_url": "https://example.com/jobs/java",
+                        "updated_at": now.isoformat(),
+                    },
+                ]
+            },
+        )
+
+    session = Mock()
+    session.execute.return_value.scalars.return_value.all.return_value = [_board()]
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = GreenhouseJobSyncService(session, client=client).sync(
+            include_keywords=["PYTHON"],
+            exclude_keywords=["staffing"],
+        )
+
+    assert result.jobs_found == 0
+    assert result.jobs_stored == 0
+    assert session.execute.call_count == 1
+
+
+def test_keyword_filter_matches_any_include_and_prioritizes_exclusions() -> None:
+    job = JobEntry(
+        source=GREENHOUSE_SOURCE,
+        job_title="Senior Python Engineer",
+        url="https://example.com/jobs/1",
+        company_name="Example Corp",
+        job_location="Remote",
+        jd_summary="Build distributed APIs.",
+    )
+
+    assert GreenhouseJobSyncService._matches_keywords(
+        job,
+        include_keywords=["rust", "PYTHON"],
+        exclude_keywords=[],
+    )
+    assert not GreenhouseJobSyncService._matches_keywords(
+        job,
+        include_keywords=["python"],
+        exclude_keywords=["distributed"],
+    )
 
 
 def test_upsert_jobs_batches_large_syncs() -> None:

@@ -94,10 +94,14 @@ def sync_greenhouse_jobs(
     session: Annotated[Session, Depends(get_session)],
     policy: GreenhouseBoardSyncPolicy = GreenhouseBoardSyncPolicy.RECENTLY_UPDATED,
     board_limit: int | None = Query(default=None, ge=1),
+    include_keywords: Annotated[list[str] | None, Query()] = None,
+    exclude_keywords: Annotated[list[str] | None, Query()] = None,
 ) -> GreenhouseJobSyncResponse:
     result = GreenhouseJobSyncService(session).sync(
         policy=policy,
         board_limit=board_limit,
+        include_keywords=include_keywords or (),
+        exclude_keywords=exclude_keywords or (),
     )
     session.commit()
     return GreenhouseJobSyncResponse.model_validate(result, from_attributes=True)
