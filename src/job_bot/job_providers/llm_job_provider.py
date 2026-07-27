@@ -9,9 +9,7 @@ from urllib.parse import urljoin, urlparse
 
 import structlog
 from langchain.messages import HumanMessage, SystemMessage
-from playwright.sync_api import Page
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import Page, PlaywrightContextManager, sync_playwright
 from pydantic import BaseModel
 
 from job_bot.greenhouse.service import CompanyCareerSiteList
@@ -42,7 +40,7 @@ class LLMJobProvider(JobProvider):
         headless: bool = True,
         navigation_timeout_ms: int = 30_000,
         max_page_content_chars: int = 200_000,
-        playwright_factory: Callable[[], object] = sync_playwright,
+        playwright_factory: Callable[[], PlaywrightContextManager] = sync_playwright,
     ) -> None:
         if navigation_timeout_ms <= 0:
             raise ValueError("navigation_timeout_ms must be positive")
@@ -89,19 +87,11 @@ class LLMJobProvider(JobProvider):
                             url=item.career_site_url,
                         )
                         continue
-                    try:
-                        jobs = self._extract_company_jobs(
-                            page,
-                            company_name,
-                            item.career_site_url,
-                        )
-                    except Exception:
-                        logger.exception(
-                            "llm_job_provider_site_failed",
-                            company_name=company_name,
-                            url=item.career_site_url,
-                        )
-                        continue
+                    jobs = self._extract_company_jobs(
+                        page,
+                        company_name,
+                        item.career_site_url,
+                    )
 
                     for job in jobs:
                         if self._accepts(job):
@@ -146,10 +136,7 @@ class LLMJobProvider(JobProvider):
         career_site_url: str,
     ) -> list[JobEntrySchema]:
         page.goto(career_site_url, wait_until="domcontentloaded")
-        try:
-            page.wait_for_load_state("networkidle", timeout=self.navigation_timeout_ms)
-        except PlaywrightTimeoutError:
-            logger.debug("llm_job_provider_network_still_active", url=career_site_url)
+        page.wait_for_load_state("networkidle", timeout=self.navigation_timeout_ms)
         final_url = page.url
         if not self._is_safe_public_url(final_url):
             raise ValueError(f"Career site redirected to an unsafe URL: {final_url}")

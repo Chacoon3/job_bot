@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import pytest
+
 from job_bot.greenhouse.service import CompanyCareerSite, CompanyCareerSiteList
 from job_bot.job_providers.llm_job_provider import JobEntryList, LLMJobProvider
 from job_bot.schemas import JobEntrySchema
@@ -152,3 +154,35 @@ def test_date_filter_rejects_unknown_dates() -> None:
     )
 
     assert provider._accepts(_job(posted=None)) is False
+
+
+def test_scraping_error_propagates_and_browser_closes(monkeypatch) -> None:
+    llm = FakeLLMProvider(
+        {
+            CompanyCareerSiteList: CompanyCareerSiteList(
+                items=[
+                    CompanyCareerSite(
+                        company_name="Example",
+                        career_site_url="https://careers.example.com/jobs",
+                    )
+                ]
+            )
+        }
+    )
+    playwright = FakePlaywrightContext()
+    monkeypatch.setattr(LLMJobProvider, "_is_safe_public_url", staticmethod(lambda _url: True))
+    monkeypatch.setattr(
+        playwright.page,
+        "goto",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("scrape failed")),
+    )
+    provider = LLMJobProvider(
+        ["Example"],
+        llm,  # type: ignore[arg-type]
+        playwright_factory=lambda: playwright,
+    )
+
+    with pytest.raises(RuntimeError, match="scrape failed"):
+        provider.provide()
+
+    assert playwright.browser.closed is True
