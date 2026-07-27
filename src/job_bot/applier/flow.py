@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import Literal
 
 import structlog
 from langchain.agents import create_agent
@@ -12,32 +11,10 @@ from pydantic import BaseModel, Field
 
 from job_bot.llm import OpenAILLMProvider
 from job_bot.openai_client import get_openai_client
-from job_bot.schemas import JobEntrySchema
+from job_bot.schemas import ApplicationStatus, CandidateProfile, JobEntrySchema
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 
 logger = structlog.get_logger(__name__)
-
-
-class EducationDegree(BaseModel):
-    degree: str
-    field_of_study: str
-    institution: str
-    duration_minimum: int
-    duration_maximum: int
-    gpa: float
-
-
-class CandidateProfile(BaseModel):
-    name: str
-    email: str
-    phone: str
-    linkedin_url: str | None = None
-    github_url: str | None = None
-    portfolio_url: str | None = None
-    education: list[EducationDegree]
-    resume_text: str
-    require_sponsorship: bool = False
-    summary: str
 
 
 class JobQuery(BaseModel):
@@ -51,12 +28,6 @@ class JobQuery(BaseModel):
     posted_since: datetime | None = None
     extra_criteria: list[str] | None = None
     num_limit: int = 10
-
-
-class ApplicationStatus(BaseModel):
-    job: JobEntrySchema
-    status: Literal["applied", "failed"]
-    message: str | None = None
 
 
 class JobSearchResponse(BaseModel):

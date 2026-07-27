@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.dialects.postgresql import Range
@@ -90,3 +91,31 @@ class GreenhouseBoardSchema(BaseModel):
     @classmethod
     def from_orm_model(cls, board: GreenhouseBoard) -> GreenhouseBoardSchema:
         return cls.model_validate(board)
+
+
+class ApplicationStatus(BaseModel):
+    job: JobEntrySchema
+    status: Literal["applied", "failed"]
+    message: str | None = None
+
+
+class EducationDegree(BaseModel):
+    degree: str
+    field_of_study: str
+    institution: str
+    duration_minimum: int
+    duration_maximum: int
+    gpa: float
+
+
+class CandidateProfile(BaseModel):
+    name: str
+    email: str
+    phone: str
+    linkedin_url: str | None = None
+    github_url: str | None = None
+    portfolio_url: str | None = None
+    education: list[EducationDegree]
+    resume_text: str
+    require_sponsorship: bool = False
+    summary: str

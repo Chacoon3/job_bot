@@ -3,8 +3,8 @@ from functools import cache
 from langchain.chat_models import BaseChatModel
 from langchain.messages import HumanMessage, SystemMessage
 
-from job_bot.flow import CandidateProfile
 from job_bot.llm import OpenAILLMProvider
+from job_bot.schemas import CandidateProfile
 
 
 @cache

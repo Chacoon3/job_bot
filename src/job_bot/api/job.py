@@ -7,21 +7,20 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
-from job_bot.db.app_redis import AppRedisAsync
-from job_bot.db.job_models import JobEntry
-from job_bot.db.upsert import batched_upsert
-from job_bot.flow import (
+from job_bot.applier.flow import (
     ApplicationStatus,
-    CandidateProfile,
     JobQuery,
     apply_job,
     apply_jobs,
     find_jobs,
 )
+from job_bot.db.app_redis import AppRedisAsync
+from job_bot.db.job_models import JobEntry
+from job_bot.db.upsert import batched_upsert
 from job_bot.job_providers.llm_job_provider import LLMJobProvider
 from job_bot.llm import OpenAILLMProvider
 from job_bot.resume_parser import parse_resume
-from job_bot.schemas import JobEntrySchema
+from job_bot.schemas import CandidateProfile, JobEntrySchema
 from job_bot.utils.file_upload import parse_pure_text_pdf
 
 router = APIRouter(prefix="/api", tags=["job_bot"])

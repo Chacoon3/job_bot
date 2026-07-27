@@ -112,10 +112,12 @@ def find_jobs(query: JobQuery) -> list[JobEntry]:
             SystemMessage(
                 content="Extract validated job entries from research notes. Only include postings that are likely real and have a URL."
             ),
-            HumanMessage(content=f"""Search criteria:
+            HumanMessage(
+                content=f"""Search criteria:
 {query.model_dump_json(indent=2)}
 Research notes:
-{research_notes}"""),
+{research_notes}"""
+            ),
         ]
     )
     return structured.jobs
