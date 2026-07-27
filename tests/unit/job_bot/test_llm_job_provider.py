@@ -42,6 +42,8 @@ class FakePage:
     def __init__(self) -> None:
         self.visited: list[str] = []
         self.timeout: int | None = None
+        self.settle_time_ms: int | None = None
+        self.load_states: list[str] = []
 
     def set_default_navigation_timeout(self, timeout: int) -> None:
         self.timeout = timeout
@@ -51,20 +53,36 @@ class FakePage:
         assert wait_until == "domcontentloaded"
 
     def wait_for_load_state(self, state: str, *, timeout: int) -> None:
-        assert state == "networkidle"
-        assert timeout == 30_000
+        self.load_states.append(state)
+
+    def wait_for_timeout(self, timeout: int) -> None:
+        self.settle_time_ms = timeout
 
     def content(self) -> str:
         return "<a href='/jobs/1'>Engineer</a>"
 
 
-class FakeBrowser:
+class FakeBrowserContext:
     def __init__(self, page: FakePage) -> None:
         self.page = page
         self.closed = False
 
     def new_page(self) -> FakePage:
         return self.page
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeBrowser:
+    def __init__(self, page: FakePage) -> None:
+        self.context = FakeBrowserContext(page)
+        self.context_options: dict[str, object] | None = None
+        self.closed = False
+
+    def new_context(self, **kwargs: object) -> FakeBrowserContext:
+        self.context_options = kwargs
+        return self.context
 
     def close(self) -> None:
         self.closed = True
@@ -129,7 +147,23 @@ def test_discovers_site_extracts_normalizes_and_filters_jobs(monkeypatch) -> Non
 
     assert provider.company_names == ["Example"]
     assert playwright.page.visited == ["https://careers.example.com/jobs"]
+    assert playwright.page.load_states == []
+    assert playwright.page.settle_time_ms == 1_500
+    assert playwright.browser.context.closed is True
     assert playwright.browser.closed is True
+    options = playwright.browser.context_options
+    assert options is not None
+    assert options["user_agent"] == provider.user_agent
+    assert options["locale"] == "en-US"
+    assert options["timezone_id"] == "America/New_York"
+    assert options["viewport"] == {"width": 1440, "height": 900}
+    assert options["screen"] == {"width": 1440, "height": 900}
+    assert options["is_mobile"] is False
+    assert options["has_touch"] is False
+    assert options["extra_http_headers"] == {
+        "Accept-Language": "en-US,en;q=0.9",
+        "Upgrade-Insecure-Requests": "1",
+    }
     assert len(jobs) == 1
     assert jobs[0].company_name == "Example"
     assert jobs[0].source == "llm"
@@ -185,4 +219,5 @@ def test_scraping_error_propagates_and_browser_closes(monkeypatch) -> None:
     with pytest.raises(RuntimeError, match="scrape failed"):
         provider.provide()
 
+    assert playwright.browser.context.closed is True
     assert playwright.browser.closed is True
