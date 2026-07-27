@@ -13,7 +13,7 @@ from job_bot.agent.nodes import (
     should_invoke_tool,
     tool_call_node,
 )
-from job_bot.agent.react_applier import build_agent
+from job_bot.agent.react_applier import build_applier_agent
 
 
 class FakePage:
@@ -49,7 +49,7 @@ class FakeTool:
 
 
 def test_build_agent_has_no_model_or_credential_side_effect() -> None:
-    assert type(build_agent()).__name__ == "CompiledStateGraph"
+    assert type(build_applier_agent()).__name__ == "CompiledStateGraph"
 
 
 def test_open_job_page_awaits_session_and_navigates_to_job_url() -> None:

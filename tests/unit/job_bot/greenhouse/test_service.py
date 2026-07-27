@@ -6,7 +6,8 @@ import httpx
 
 from job_bot.greenhouse.service import (
     CandidateDiscoveryResult,
-    CompanyCareerSites,
+    CompanyCareerSite,
+    CompanyCareerSiteList,
     GreenhouseCompanyDiscoverer,
     GreenhouseGlobalDiscoverer,
 )
@@ -14,15 +15,15 @@ from job_bot.llm import LLMProvider
 
 
 class FakeLLMProvider(LLMProvider):
-    def __init__(self, response: CompanyCareerSites | None = None) -> None:
-        self.model = FakeStructuredModel(response or CompanyCareerSites(root={}))
+    def __init__(self, response: CompanyCareerSiteList | None = None) -> None:
+        self.model = FakeStructuredModel(response or CompanyCareerSiteList(items=[]))
 
     def get_model(self):
         return self.model
 
 
 class FakeStructuredModel:
-    def __init__(self, response: CompanyCareerSites) -> None:
+    def __init__(self, response: CompanyCareerSiteList) -> None:
         self.response = response
         self.schema = None
         self.method = None
@@ -39,15 +40,22 @@ class FakeStructuredModel:
 
 
 def test_company_discoverer_calls_llm_provider_for_career_sites() -> None:
-    expected = CompanyCareerSites(root={"Acme": "https://boards.greenhouse.io/acme"})
+    expected = CompanyCareerSiteList(
+        items=[
+            CompanyCareerSite(
+                company_name="Acme",
+                career_site_url="https://boards.greenhouse.io/acme",
+            )
+        ]
+    )
     provider = FakeLLMProvider(expected)
     discoverer = GreenhouseCompanyDiscoverer(["Acme"], provider)
 
     result = asyncio.run(discoverer._find_career_sites())
 
-    assert result == expected.root
-    assert provider.model.schema is CompanyCareerSites
-    assert provider.model.method == "function_calling"
+    assert result == {"Acme": "https://boards.greenhouse.io/acme"}
+    assert provider.model.schema is CompanyCareerSiteList
+    assert provider.model.method is None
     assert provider.model.messages is not None
 
 
@@ -58,21 +66,30 @@ def test_company_discoverer_uses_llm_sites_and_extracts_greenhouse_boards(
         ["Acme", "Other"],
         FakeLLMProvider(),
     )
-    career_sites = CompanyCareerSites(
-        root={"Acme": "https://careers.acme.test", "Other": "https://other.test/jobs"}
+    career_sites = CompanyCareerSiteList(
+        items=[
+            CompanyCareerSite(
+                company_name="Acme",
+                career_site_url="https://careers.acme.test",
+            ),
+            CompanyCareerSite(
+                company_name="Other",
+                career_site_url="https://other.test/jobs",
+            ),
+        ]
     )
 
     async def fake_find_career_sites():
-        return career_sites.root
+        return {item.company_name: item.career_site_url for item in career_sites.items}
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "careers.acme.test":
             return httpx.Response(
                 200,
                 request=request,
-                html='<iframe src="https://job-boards.greenhouse.io/acme"></iframe>',
+                text='<iframe src="https://job-boards.greenhouse.io/acme"></iframe>',
             )
-        return httpx.Response(200, request=request, html="<p>Not Greenhouse</p>")
+        return httpx.Response(200, request=request, text="<p>Not Greenhouse</p>")
 
     monkeypatch.setattr(discoverer, "_find_career_sites", fake_find_career_sites)
     async_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))

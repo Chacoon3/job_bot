@@ -12,7 +12,7 @@ from job_bot.greenhouse.jobs import (
     GreenhouseJobSyncService,
     _parse_datetime,
 )
-from job_bot.greenhouse_job_provider import GREENHOUSE_SOURCE
+from job_bot.job_providers.greenhouse_job_provider import GREENHOUSE_SOURCE
 
 
 def _board() -> GreenhouseBoard:

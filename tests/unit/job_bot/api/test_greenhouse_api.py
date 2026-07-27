@@ -174,7 +174,7 @@ def test_discover_boards_by_company_uses_llm_provider(monkeypatch) -> None:
             return report
 
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    app.dependency_overrides[greenhouse_api.get_llm_provider] = lambda: provider
+    monkeypatch.setattr(greenhouse_api, "OpenAILLMProvider", lambda: provider)
     monkeypatch.setattr(
         greenhouse_api,
         "GreenhouseCompanyDiscoverer",
@@ -203,7 +203,6 @@ def test_discover_boards_by_company_uses_llm_provider(monkeypatch) -> None:
 
 def test_company_discovery_requires_company_names() -> None:
     app.dependency_overrides[dependencies.get_session] = lambda: DummySession()
-    app.dependency_overrides[greenhouse_api.get_llm_provider] = lambda: object()
 
     client = TestClient(app)
     response = client.post(

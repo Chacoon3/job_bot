@@ -1,12 +1,8 @@
 import asyncio
 from types import SimpleNamespace
 
-from job_bot.flow import (
-    CandidateProfile,
-    EducationDegree,
-    apply_job,
-)
-from job_bot.schemas import JobEntrySchema
+from job_bot.applier.flow import apply_job
+from job_bot.schemas import CandidateProfile, EducationDegree, JobEntrySchema
 
 
 class FakeAsyncPlaywrightContext:
@@ -67,11 +63,11 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
         captured_create_agent.update(kwargs)
         return fake_agent
 
-    monkeypatch.setattr("job_bot.flow.async_playwright", lambda: playwright_context)
-    monkeypatch.setattr("job_bot.flow.BrowserSession", FakeBrowserSession)
-    monkeypatch.setattr("job_bot.flow.build_browser_tools", lambda session: ["fake-tool"])
-    monkeypatch.setattr("job_bot.flow.OpenAILLMProvider", FakeModelProvider)
-    monkeypatch.setattr("job_bot.flow.create_agent", fake_create_agent)
+    monkeypatch.setattr("job_bot.applier.flow.async_playwright", lambda: playwright_context)
+    monkeypatch.setattr("job_bot.applier.flow.BrowserSession", FakeBrowserSession)
+    monkeypatch.setattr("job_bot.applier.flow.build_browser_tools", lambda session: ["fake-tool"])
+    monkeypatch.setattr("job_bot.applier.flow.OpenAILLMProvider", FakeModelProvider)
+    monkeypatch.setattr("job_bot.applier.flow.create_agent", fake_create_agent)
 
     job = JobEntrySchema(
         job_title="Software Engineer",

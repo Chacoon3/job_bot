@@ -7,8 +7,8 @@ import pytest
 from sqlalchemy.dialects.postgresql import Range
 
 from job_bot.db.job_models import JobEntry
-from job_bot.greenhouse_job_provider import GreenHouseJobProvider
-from job_bot.job_provider import JobProvider
+from job_bot.job_providers.greenhouse_job_provider import GreenHouseJobProvider
+from job_bot.job_providers.job_provider import JobProvider
 from job_bot.schemas import JobEntrySchema
 
 

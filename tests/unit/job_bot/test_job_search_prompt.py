@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from job_bot.flow import JobQuery, _build_job_search_prompt
+from job_bot.applier.flow import JobQuery, _build_job_search_prompt
 
 
 def job_query(extra_criteria: list[str] | None = None) -> JobQuery:
