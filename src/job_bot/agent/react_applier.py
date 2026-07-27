@@ -4,11 +4,11 @@ from enum import Enum
 from functools import cache
 from typing import Annotated
 
-import playwright
 from langchain.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, StateGraph, add_messages
 from langgraph.graph.state import START, CompiledStateGraph
 from langgraph.runtime import Runtime
+from playwright.async_api import async_playwright
 from pydantic import BaseModel
 
 from job_bot.adt import JobAgentContext
@@ -42,11 +42,7 @@ class JobAppState(BaseModel):
 @log_upon_exit
 async def init(state: JobAppState, runtime: Runtime[JobAgentContext]) -> dict:
     if runtime.context.browser_session is None:
-        session = BrowserSession(playwright=playwright, headless=True)
-        await session.start()
-        runtime.context.browser_session = session
-        runtime.context.browser_tools = build_browser_tools(session)
-        runtime.context.model = runtime.context.model.bind_tools(runtime.context.browser_tools)
+        raise RuntimeError("A started browser session must be provided in the agent context.")
 
     return JobAppState(
         messages=[
@@ -186,16 +182,19 @@ def build_applier_agent() -> CompiledStateGraph:
 
 async def apply_for_job(job_url: str, resume: bytes, resume_text: str, model_provider: LLMProvider):
     agent = build_applier_agent()
-    async with BrowserSession(playwright=playwright, headless=False) as session:
-        await session.start()
-        browser_tools = build_browser_tools(session)
-        model = model_provider.get_model().bind_tools(browser_tools)
-        context = JobAgentContext(
-            job_url=job_url,
-            browser_session=session,
-            browser_tools=browser_tools,
-            model=model,
-            resume=resume,
-            resume_text=resume_text,
-        )
-        await agent.ainvoke([], context=context)
+    async with async_playwright() as playwright:
+        async with BrowserSession(playwright=playwright, headless=False) as session:
+            browser_tools = build_browser_tools(session)
+            model = model_provider.get_model().bind_tools(browser_tools)
+            context = JobAgentContext(
+                job_url=job_url,
+                browser_session=session,
+                browser_tools=browser_tools,
+                model=model,
+                resume=resume,
+                resume_text=resume_text,
+            )
+            return await agent.ainvoke(
+                JobAppState(job_url=job_url, messages=[]),
+                context=context,
+            )

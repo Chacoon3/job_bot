@@ -3,9 +3,11 @@ from __future__ import annotations
 from enum import Enum, unique
 from typing import Annotated
 
-from langchain.chat_models import BaseChatModel
-from langchain.messages import AnyMessage
+from langchain.messages import AIMessage, AnyMessage
 from langchain.tools import BaseTool
+from langchain_core.language_models.base import LanguageModelInput
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import Runnable
 from langgraph.graph import add_messages
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -91,7 +93,7 @@ class JobAgentContext(BaseModel):
 
     browser_session: BrowserSession | None = None
     browser_tools: list[BaseTool] | None = None
-    model: BaseChatModel | None = None
+    model: Runnable[LanguageModelInput, AIMessage] | None = None
 
     resume: bytes
     resume_text: str
