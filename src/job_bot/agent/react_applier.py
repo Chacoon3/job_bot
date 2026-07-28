@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+import asyncio
+import random
 from enum import Enum
 from functools import cache
 from typing import Annotated
 
 from langchain.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_community.tools import tool
 from langgraph.graph import END, StateGraph, add_messages
 from langgraph.graph.state import START, CompiledStateGraph
 from langgraph.runtime import Runtime
 from playwright.async_api import async_playwright
 from pydantic import BaseModel
+from structlog import get_logger
 
 from job_bot.adt import JobAgentContext
 from job_bot.agent.prompts import JOB_APPSYS_MSG_TEXT
 from job_bot.llm import LLMProvider
+from job_bot.schemas import CandidateProfile
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 from job_bot.utils.decorators import log_upon_exit
 
@@ -37,6 +42,9 @@ class JobAppState(BaseModel):
     action_count: int = 0
     consecutive_failures: int = 0
     evaluation: ApplicationEvaluation | None = None
+    profile: CandidateProfile | None = None
+    resume: bytes | None = None
+    resume_text: str | None = None
 
 
 @log_upon_exit
@@ -47,7 +55,9 @@ async def init(state: JobAppState, runtime: Runtime[JobAgentContext]) -> dict:
     return JobAppState(
         messages=[
             SystemMessage(content=JOB_APPSYS_MSG_TEXT),
-            HumanMessage(content=f"Complete the job application at the url: {state.job_url}."),
+            HumanMessage(
+                content=f"Here is a brief summary of my profile: {state.profile.to_prompt_text()}.\nComplete the job application at the url: {state.job_url}."
+            ),
         ],
         job_url=state.job_url,
     )
@@ -103,26 +113,41 @@ async def use_tool(
     tool_messages: list[ToolMessage] = []
 
     if len(last_message.tool_calls) > 1:
-        raise RuntimeError("use_tool expects only one tool call in the last message.")
-
-    tool_call = last_message.tool_calls[0]
-    tool = tool_registry.get(tool_call["name"])
-
-    if tool is None:
-        result = f"Unsupported tool: {tool_call['name']}"
-    else:
-        try:
-            result = await tool.ainvoke(tool_call["args"])
-        except Exception as exc:
-            result = f"Tool execution failed: " f"{type(exc).__name__}: {exc}"
-
-    tool_messages.append(
-        ToolMessage(
-            content=str(result),
-            tool_call_id=tool_call["id"],
-            name=tool_call["name"],
+        get_logger().warning(
+            "Multiple tool calls detected in the last message. ", tool_calls=last_message.tool_calls
         )
-    )
+
+    for tool_call in last_message.tool_calls:
+        await asyncio.sleep(random.random())
+        tool = tool_registry.get(tool_call["name"])
+        if tool is None:
+            result = f"Unsupported tool: {tool_call['name']}"
+        else:
+            try:
+                result = await tool.ainvoke(tool_call["args"])
+                get_logger().info(
+                    "Tool executed successfully.",
+                    tool_name=tool_call["name"],
+                    tool_args=tool_call["args"],
+                    tool_result=result,
+                )
+            except Exception as exc:
+                result = f"Tool execution failed: " f"{type(exc).__name__}: {exc}"
+                get_logger().error(
+                    "Tool execution failed.",
+                    tool_name=tool_call["name"],
+                    tool_args=tool_call["args"],
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+
+        tool_messages.append(
+            ToolMessage(
+                content=str(result),
+                tool_call_id=tool_call["id"],
+                name=tool_call["name"],
+            )
+        )
 
     return JobAppState(
         messages=tool_messages,
@@ -155,6 +180,18 @@ def post_evaluate_router(state: JobAppState) -> str:
         if isinstance(ApplicationStatus(last_message.content), ApplicationStatus):
             status = ApplicationStatus(last_message.content)
             if status == ApplicationStatus.IN_PROGRESS:
+                if state.consecutive_failures >= 5:
+                    get_logger().warning(
+                        "Too many consecutive failures. Ending the application process.",
+                        consecutive_failures=state.consecutive_failures,
+                    )
+                    return END
+                if state.action_count >= 20:
+                    get_logger().warning(
+                        "Too many actions taken. Ending the application process.",
+                        action_count=state.action_count,
+                    )
+                    return END
                 return "act"
             if status == ApplicationStatus.SUBMITTED or status == ApplicationStatus.ERROR:
                 return END
@@ -180,21 +217,33 @@ def build_applier_agent() -> CompiledStateGraph:
     return graph.compile()
 
 
-async def apply_for_job(job_url: str, resume: bytes, resume_text: str, model_provider: LLMProvider):
+async def apply_for_job(
+    job_url: str,
+    profile: CandidateProfile,
+    resume: bytes,
+    resume_text: str,
+    model_provider: LLMProvider,
+):
     agent = build_applier_agent()
+
+    @tool(description="Get the resume file to upload to the job application website.")
+    async def get_resume_file() -> bytes:
+        return resume
+
     async with async_playwright() as playwright:
         async with BrowserSession(playwright=playwright, headless=False) as session:
             browser_tools = build_browser_tools(session)
-            model = model_provider.get_model().bind_tools(browser_tools)
+            model = model_provider.get_model().bind_tools([get_resume_file, *browser_tools])
             context = JobAgentContext(
-                job_url=job_url,
-                browser_session=session,
-                browser_tools=browser_tools,
-                model=model,
-                resume=resume,
-                resume_text=resume_text,
+                job_url=job_url, browser_session=session, browser_tools=browser_tools, model=model
             )
             return await agent.ainvoke(
-                JobAppState(job_url=job_url, messages=[]),
+                JobAppState(
+                    job_url=job_url,
+                    messages=[],
+                    resume=resume,
+                    resume_text=resume_text,
+                    profile=profile,
+                ),
                 context=context,
             )

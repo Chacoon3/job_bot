@@ -111,11 +111,36 @@ class EducationDegree(BaseModel):
 class CandidateProfile(BaseModel):
     name: str
     email: str
+    phone_area_code: str
     phone: str
     linkedin_url: str | None = None
     github_url: str | None = None
     portfolio_url: str | None = None
     education: list[EducationDegree]
     resume_text: str
-    require_sponsorship: bool = False
+    require_sponsorship: bool = True
     summary: str
+
+    def to_prompt_text(self) -> str:
+        """Convert the candidate profile to a prompt text for LLMs."""
+
+        education_str = "\n".join(
+            [
+                f"- {edu.degree} in {edu.field_of_study} from {edu.institution} "
+                f"({edu.duration_minimum}-{edu.duration_maximum} years, GPA: {edu.gpa})"
+                for edu in self.education
+            ]
+        )
+        return (
+            f"Name: {self.name}\n"
+            f"Email: {self.email}\n"
+            f"Phone Area Code: {self.phone_area_code}\n"
+            f"Phone: {self.phone}\n"
+            f"LinkedIn: {self.linkedin_url}\n"
+            f"GitHub: {self.github_url}\n"
+            f"Portfolio: {self.portfolio_url}\n"
+            f"Require Sponsorship: {'Yes' if self.require_sponsorship else 'No'}\n"
+            f"Education:\n{education_str}\n"
+            f"Resume Text:\n{self.resume_text}\n"
+            f"Summary:\n{self.summary}"
+        )

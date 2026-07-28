@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -159,6 +160,16 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             ensure_ascii=False,
             indent=2,
         )
+
+    @tool("pause_interaction")
+    async def pause_interaction(wait_seconds: float = 3) -> None:
+        """
+        utilize the asyncio.sleep method to pause the execution for the specified time (in seconds)
+
+        Args:
+            wait_seconds (float, optional): the time to wait in seconds. Defaults to 3.
+        """
+        await asyncio.sleep(wait_seconds)
 
     @tool("browser_open_url")
     async def browser_open_url(
@@ -581,7 +592,8 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             frame = session.frame(frame_index)
         except ValueError as error:
             return frame_error(frame_index, error)
-        result = await frame.locator(selector).first.evaluate(r"""
+        result = await frame.locator(selector).first.evaluate(
+            r"""
             (element) => {
               const clone = element.cloneNode(true);
               clone.querySelectorAll('script, style, noscript, svg').forEach(
@@ -593,7 +605,8 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
               });
               return clone.outerHTML;
             }
-            """)
+            """
+        )
         return result[:max_chars]
 
     @tool("browser_upload_file")

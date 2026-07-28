@@ -47,5 +47,7 @@ async def api_apply(request: Request):
         profile = parse_resume(resume_str)
         await AppRedisAsync.set(profile_hash_key, profile.model_dump_json())
 
-    res = await apply_for_job(job_url, content, str(profile), model_provider=OpenAILLMProvider())
+    res = await apply_for_job(
+        job_url, profile, content, parse_pure_text_pdf(content), model_provider=OpenAILLMProvider()
+    )
     return res

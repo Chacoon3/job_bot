@@ -94,6 +94,3 @@ class JobAgentContext(BaseModel):
     browser_session: BrowserSession | None = None
     browser_tools: list[BaseTool] | None = None
     model: Runnable[LanguageModelInput, AIMessage] | None = None
-
-    resume: bytes
-    resume_text: str
