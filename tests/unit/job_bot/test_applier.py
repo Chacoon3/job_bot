@@ -2,7 +2,10 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
+import pytest
+from pydantic import ValidationError
+
+from job_bot.utils.browser_tools import BrowserSession, UploadableFile, build_browser_tools
 
 
 class FakeLocator:
@@ -114,6 +117,9 @@ class FakePageLocator:
         assert self.selector == "#apply"
         if self.page.click_callback is not None:
             self.page.click_callback()
+
+    async def set_input_files(self, files: object) -> None:
+        self.page.uploaded_files = files
 
 
 def _session_with_pages(*pages: FakePage) -> BrowserSession:
@@ -260,3 +266,37 @@ def test_stale_frame_index_returns_recoverable_error() -> None:
         }
     ]
     assert "retry" in result["next_action"]
+
+
+def test_uploadable_file_defaults_to_binary_mime_type_and_requires_content() -> None:
+    upload = UploadableFile(filename="resume.pdf", content=b"pdf")
+
+    assert upload.mime_type == "application/octet-stream"
+    with pytest.raises(ValidationError):
+        UploadableFile(filename="resume.pdf", content=b"")
+
+
+def test_upload_file_uses_in_memory_playwright_payload() -> None:
+    frame = FakeFrame("", "https://example.com/application")
+    page = FakePage("https://example.com/application", "Application", [frame])
+    tools = build_browser_tools(_session_with_pages(page))
+
+    result = asyncio.run(
+        _tool(tools, "browser_upload_file").ainvoke(
+            {
+                "selector": 'input[type="file"]',
+                "uploadable_file": {
+                    "filename": "resume.pdf",
+                    "content": b"pdf-bytes",
+                    "mime_type": "application/pdf",
+                },
+            }
+        )
+    )
+
+    assert page.uploaded_files == {
+        "name": "resume.pdf",
+        "mimeType": "application/pdf",
+        "buffer": b"pdf-bytes",
+    }
+    assert result == 'Uploaded resume.pdf using input[type="file"]'

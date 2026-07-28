@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Literal
 
 from langchain_core.tools import BaseTool, tool
@@ -16,6 +15,8 @@ from playwright.async_api import (
     Playwright,
 )
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+from job_bot.utils.file_upload import UploadableFile
 
 WaitUntil = Literal["load", "domcontentloaded", "networkidle", "commit"]
 SelectBy = Literal["value", "label", "index"]
@@ -610,13 +611,16 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         return result[:max_chars]
 
     @tool("browser_upload_file")
-    async def browser_upload_file(selector: str, file_path: str) -> str:
-        """Upload a local file through the first matching file input."""
-        path = Path(file_path).expanduser().resolve()
-        if not path.is_file():
-            raise FileNotFoundError(f"Upload file does not exist: {path}")
-        await session.page().locator(selector).first.set_input_files(str(path))
-        return f"Uploaded {path.name} using {selector}"
+    async def browser_upload_file(selector: str, uploadable_file: UploadableFile) -> str:
+        """Upload an in-memory user-provided file through the first matching file input."""
+        await session.page().locator(selector).first.set_input_files(
+            {
+                "name": uploadable_file.filename,
+                "mimeType": uploadable_file.mime_type,
+                "buffer": uploadable_file.content,
+            }
+        )
+        return f"Uploaded {uploadable_file.filename} using {selector}"
 
     return [
         browser_open_url,
