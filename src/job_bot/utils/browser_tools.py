@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 from langchain_core.tools import BaseTool, tool
 from playwright.async_api import (
@@ -18,6 +18,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 WaitUntil = Literal["load", "domcontentloaded", "networkidle", "commit"]
 SelectBy = Literal["value", "label", "index"]
+FileId = Literal["resume", "cover_letter"]
 
 
 @dataclass(slots=True)
@@ -32,11 +33,11 @@ class BrowserSession:
     _browser: Browser | None = field(default=None, init=False, repr=False)
     _context: BrowserContext | None = field(default=None, init=False, repr=False)
     _page: Page | None = field(default=None, init=False, repr=False)
-    state: dict = field(default_factory=dict, init=False, repr=False)
+    state: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
 
     @property
     def started(self) -> bool:
-        return self._page is not None
+        return self._browser is not None and self._context is not None
 
     async def start(self, headless: bool | None = None) -> None:
         if self.started:
@@ -63,7 +64,8 @@ class BrowserSession:
         if browser is not None:
             await browser.close()
 
-    def page(self) -> Page:
+    async def ensure_page(self) -> Page:
+        """Return a usable page, creating one when the context has no open pages."""
         if self._page is not None and not self._page.is_closed():
             return self._page
 
@@ -74,8 +76,24 @@ class BrowserSession:
                     self._page.set_default_timeout(self.default_timeout_ms)
                     return self._page
 
-        if self._page is None:
+        if self._context is None:
             raise RuntimeError("Browser session is not started")
+
+        self._page = await self._context.new_page()
+        self._page.set_default_timeout(self.default_timeout_ms)
+        return self._page
+
+    def page(self) -> Page:
+        """Return the current usable page without performing I/O."""
+        if self._page is not None and not self._page.is_closed():
+            return self._page
+        if self._context is None:
+            raise RuntimeError("Browser session is not started")
+        for page in reversed(self._context.pages):
+            if not page.is_closed():
+                self._page = page
+                page.set_default_timeout(self.default_timeout_ms)
+                return page
         raise RuntimeError("Every page in the browser session has been closed")
 
     def pages(self) -> list[Page]:
@@ -112,35 +130,6 @@ class BrowserSession:
         await self.stop()
 
 
-async def _select_option(
-    page: Page,
-    selector: str,
-    option: str,
-    select_by: SelectBy,
-) -> None:
-    matches = page.locator(selector)
-    count = await matches.count()
-    if count == 0:
-        raise ValueError(
-            f"No element matched {selector!r}. Call browser_inspect_form_controls and use "
-            "an exact selector returned by that tool."
-        )
-    if count > 1:
-        raise ValueError(
-            f"Selector {selector!r} matched {count} elements. Call "
-            "browser_inspect_form_controls and use a unique selector."
-        )
-    locator = matches.first
-    await locator.wait_for(state="visible", timeout=5_000)
-    await locator.scroll_into_view_if_needed(timeout=5_000)
-    if select_by == "label":
-        await locator.select_option(label=option)
-    elif select_by == "index":
-        await locator.select_option(index=int(option))
-    else:
-        await locator.select_option(value=option)
-
-
 def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
     """Build async-only tools over an already-started browser session."""
 
@@ -148,8 +137,8 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         await locator.wait_for(state="visible", timeout=5_000)
         await locator.scroll_into_view_if_needed(timeout=5_000)
 
-    async def unique_locator(selector: str) -> Locator:
-        matches = session.page().locator(selector)
+    async def unique_locator(selector: str, frame_index: int = 0) -> Locator:
+        matches = session.frame(frame_index).locator(selector)
         count = await matches.count()
         if count == 0:
             raise ValueError(
@@ -162,6 +151,35 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
                 "browser_inspect_form_controls and use a unique selector."
             )
         return matches.first
+
+    def success(action: str, **details: object) -> str:
+        return json.dumps(
+            {"success": True, "action": action, **details},
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    async def assert_element_kind(
+        locator: Locator,
+        *,
+        allowed_tags: set[str],
+        allowed_types: set[str] | None = None,
+        forbidden_role: str | None = None,
+    ) -> tuple[str, str, str]:
+        tag = await locator.evaluate("(element) => element.tagName.toLowerCase()")
+        input_type = (await locator.get_attribute("type") or "").lower()
+        role = (await locator.get_attribute("role") or "").lower()
+        if forbidden_role and role == forbidden_role:
+            raise ValueError(
+                f"This element has role={role!r}. Use " "browser_select_combobox_option instead."
+            )
+        if tag not in allowed_tags:
+            raise ValueError(f"Expected one of {sorted(allowed_tags)}, observed <{tag}>.")
+        if allowed_types is not None and input_type not in allowed_types:
+            raise ValueError(f"Input type {input_type!r} is incompatible with this tool.")
+        if await locator.is_disabled():
+            raise ValueError("The matched element is disabled.")
+        return tag, input_type, role
 
     def frame_error(frame_index: int, error: ValueError) -> str:
         page = session.page()
@@ -189,14 +207,84 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         )
 
     @tool("pause_interaction")
-    async def pause_interaction(wait_seconds: float = 3) -> None:
+    async def pause_interaction(wait_seconds: float = 3) -> str:
         """
         utilize the asyncio.sleep method to pause the execution for the specified time (in seconds)
 
         Args:
             wait_seconds (float, optional): the time to wait in seconds. Defaults to 3.
         """
+        if not 0 <= wait_seconds <= 30:
+            raise ValueError("wait_seconds must be between 0 and 30")
         await asyncio.sleep(wait_seconds)
+        return success("pause", wait_seconds=wait_seconds)
+
+    @tool("browser_select_combobox_option")
+    async def browser_select_combobox_option(
+        selector: str,
+        option: str,
+        frame_index: int = 0,
+    ) -> str:
+        """Select a real option in a custom ARIA combobox; never use fill() for it."""
+        frame = session.frame(frame_index)
+        combo = await unique_locator(selector, frame_index)
+        await prepare_for_interaction(combo)
+        if (await combo.get_attribute("role") or "").lower() != "combobox":
+            raise ValueError(f"{selector!r} is not an ARIA combobox.")
+        await combo.click()
+        controls_id = await combo.get_attribute("aria-controls") or await combo.get_attribute(
+            "aria-owns"
+        )
+        if controls_id:
+            listbox = frame.locator(f"#{controls_id}")
+            option_locator = listbox.get_by_role("option", name=option, exact=True)
+        else:
+            option_locator = frame.get_by_role("option", name=option, exact=True)
+
+        option_count = await option_locator.count()
+        if option_count != 1:
+            raise ValueError(
+                f"Expected one option named {option!r} in the active listbox; "
+                f"found {option_count}."
+            )
+        await prepare_for_interaction(option_locator)
+        await option_locator.click()
+        await combo.press("Tab")
+        await frame.page.wait_for_timeout(100)
+
+        observed = await combo.evaluate(
+            r"""
+            (element) => {
+              const clean = (value) => (value || '').replace(/\s+/g, ' ').trim();
+              const root =
+                element.closest('[class*="control"]') ||
+                element.parentElement?.parentElement ||
+                element.parentElement;
+              const selected = root?.querySelector(
+                '[class*="single-value"], [data-value], [aria-selected="true"]'
+              );
+              const hidden = root?.querySelector('input[type="hidden"]');
+              return clean(
+                selected?.textContent ||
+                hidden?.value ||
+                element.getAttribute('aria-valuetext') ||
+                ''
+              );
+            }
+            """
+        )
+        if observed != option:
+            raise RuntimeError(
+                f"Selection did not persist after blur: expected {option!r}, "
+                f"observed {observed!r}."
+            )
+        return success(
+            "select_combobox_option",
+            selector=selector,
+            expected=option,
+            observed=observed,
+            frame_index=frame_index,
+        )
 
     @tool("browser_open_url")
     async def browser_open_url(
@@ -204,20 +292,23 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         wait_until: WaitUntil = "domcontentloaded",
     ) -> str:
         """Navigate to a URL. Call browser_inspect_page after every navigation."""
-        response = await session.page().goto(url, wait_until=wait_until)
+        page = await session.ensure_page()
+        response = await page.goto(url, wait_until=wait_until)
         status = response.status if response is not None else "unknown"
+        if response is not None and not response.ok:
+            raise RuntimeError(f"Navigation to {url} returned HTTP {status}.")
         return (
             f"Opened {url}; HTTP status: {status}. "
             "The page state may have changed; call browser_inspect_page now."
         )
 
     @tool("browser_click")
-    async def browser_click(selector: str) -> str:
+    async def browser_click(selector: str, frame_index: int = 0) -> str:
         """Click an element, follow a newly opened tab, then report the resulting page state."""
         page = session.page()
         pages_before = set(session.pages())
         url_before = page.url
-        locator = page.locator(selector).first
+        locator = await unique_locator(selector, frame_index)
         await prepare_for_interaction(locator)
         await locator.click()
         if not page.is_closed():
@@ -245,68 +336,150 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         return json.dumps(result, ensure_ascii=False, indent=2)
 
     @tool("browser_fill_text")
-    async def browser_fill_text(selector: str, text: str) -> str:
+    async def browser_fill_text(
+        selector: str,
+        text: str,
+        frame_index: int = 0,
+    ) -> str:
         """Fill one text field using an exact selector from browser_inspect_form_controls."""
-        locator = await unique_locator(selector)
+        locator = await unique_locator(selector, frame_index)
         await prepare_for_interaction(locator)
+        tag, input_type, _ = await assert_element_kind(
+            locator,
+            allowed_tags={"input", "textarea"},
+            forbidden_role="combobox",
+        )
+        forbidden_types = {
+            "button",
+            "checkbox",
+            "file",
+            "hidden",
+            "image",
+            "radio",
+            "reset",
+            "submit",
+        }
+        if tag == "input" and input_type in forbidden_types:
+            raise ValueError(f"Input type {input_type!r} cannot be used with browser_fill_text.")
+        if await locator.get_attribute("readonly") is not None:
+            raise ValueError("The matched text field is read-only.")
         await locator.fill(text)
-        return f"Filled {selector}"
+        observed = await locator.input_value()
+        if observed != text:
+            raise RuntimeError(
+                f"Fill verification failed: expected {text!r}, observed {observed!r}."
+            )
+        return success(
+            "fill_text",
+            selector=selector,
+            expected=text,
+            observed=observed,
+            frame_index=frame_index,
+        )
 
     @tool("browser_select_dropdown")
     async def browser_select_dropdown(
         selector: str,
         option: str,
         select_by: SelectBy = "value",
+        frame_index: int = 0,
     ) -> str:
-        """Select an option using a selector and option exposed by form-control inspection."""
-        await _select_option(session.page(), selector, option, select_by)
-        return f"Selected '{option}' in {selector} by {select_by}"
+        """Select an option in a native HTML select element."""
+        locator = await unique_locator(selector, frame_index)
+        await prepare_for_interaction(locator)
+        await assert_element_kind(locator, allowed_tags={"select"})
+        if select_by == "label":
+            selected = await locator.select_option(label=option)
+        elif select_by == "index":
+            selected = await locator.select_option(index=int(option))
+        else:
+            selected = await locator.select_option(value=option)
+        observed = await locator.locator("option:checked").inner_text()
+        return success(
+            "select_native_option",
+            selector=selector,
+            requested=option,
+            selected_values=selected,
+            observed_label=observed.strip(),
+            frame_index=frame_index,
+        )
 
     @tool("browser_set_checkbox")
-    async def browser_set_checkbox(selector: str, checked: bool) -> str:
+    async def browser_set_checkbox(
+        selector: str,
+        checked: bool,
+        frame_index: int = 0,
+    ) -> str:
         """Set a checkbox to the requested checked state."""
-        locator = session.page().locator(selector).first
+        locator = await unique_locator(selector, frame_index)
         await prepare_for_interaction(locator)
+        await assert_element_kind(
+            locator,
+            allowed_tags={"input"},
+            allowed_types={"checkbox"},
+        )
         if checked:
             await locator.check()
         else:
             await locator.uncheck()
-        return f"Set {selector} to {checked}"
+        observed = await locator.is_checked()
+        if observed != checked:
+            raise RuntimeError(
+                f"Checkbox verification failed: expected {checked}, observed {observed}."
+            )
+        return success(
+            "set_checkbox",
+            selector=selector,
+            expected=checked,
+            observed=observed,
+            frame_index=frame_index,
+        )
 
     @tool("browser_click_boolean_icon")
     async def browser_click_boolean_icon(
         true_selector: str,
         false_selector: str,
         value: bool,
+        frame_index: int = 0,
     ) -> str:
         """Click one of two selectors representing true and false choices."""
         selector = true_selector if value else false_selector
-        locator = session.page().locator(selector).first
+        locator = await unique_locator(selector, frame_index)
         await prepare_for_interaction(locator)
         await locator.click()
         return f"Clicked {'true' if value else 'false'} option using {selector}"
 
     @tool("browser_press_key")
-    async def browser_press_key(selector: str, key: str) -> str:
+    async def browser_press_key(
+        selector: str,
+        key: str,
+        frame_index: int = 0,
+    ) -> str:
         """Focus the first matching element and press a key."""
-        locator = session.page().locator(selector).first
+        locator = await unique_locator(selector, frame_index)
         await prepare_for_interaction(locator)
         await locator.press(key)
         return f"Pressed {key} on {selector}"
 
     @tool("browser_wait_for")
-    async def browser_wait_for(selector: str, timeout_ms: int = 10_000) -> str:
+    async def browser_wait_for(
+        selector: str,
+        timeout_ms: int = 10_000,
+        frame_index: int = 0,
+    ) -> str:
         """Wait for the first matching element to become visible."""
-        await session.page().locator(selector).first.wait_for(
+        locator = await unique_locator(selector, frame_index)
+        await locator.wait_for(
             state="visible",
             timeout=timeout_ms,
         )
         return f"Element is visible: {selector}"
 
     @tool("browser_read_text")
-    async def browser_read_text(selector: str) -> str:
+    async def browser_read_text(selector: str, frame_index: int = 0) -> str:
         """Read visible text from the first matching element."""
-        text = await session.page().locator(selector).first.inner_text()
+        locator = await unique_locator(selector, frame_index)
+        text = await locator.inner_text()
         return text.strip()
 
     @tool("browser_read_page")
@@ -569,17 +742,44 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
                 return [...new Set([...nativeLabels, ...labelledBy].filter(Boolean))].join(' | ');
               };
               return [...document.querySelectorAll('input, textarea, select, button')]
-                .slice(0, maxControls)
-                .map((element, index) => ({
-                  index,
-                  tag: element.tagName.toLowerCase(),
-                  type: element.getAttribute('type') || '',
+                .sort((left, right) => Number(Boolean(right.getClientRects().length)) -
+                  Number(Boolean(left.getClientRects().length)))
+                .map((element) => {
+                  const role = element.getAttribute('role') || '';
+                  const tag = element.tagName.toLowerCase();
+                  const type = element.getAttribute('type') || '';
+                  const controlKind =
+                    role === 'combobox' && tag !== 'select' ? 'custom_combobox' :
+                    tag === 'select' ? 'native_select' :
+                    type === 'checkbox' ? 'checkbox' :
+                    type === 'radio' ? 'radio' :
+                    type === 'file' ? 'file' :
+                    ['input', 'textarea'].includes(tag) ? 'text' :
+                    tag === 'button' ? 'button' : 'other';
+                  const interactionTool = {
+                    custom_combobox: 'browser_select_combobox_option',
+                    native_select: 'browser_select_dropdown',
+                    checkbox: 'browser_set_checkbox',
+                    file: 'browser_upload_file',
+                    text: 'browser_fill_text',
+                    button: 'browser_click',
+                  }[controlKind] || '';
+                  return {
+                  control_kind: controlKind,
+                  interaction_tool: interactionTool,
+                  options_dynamic: controlKind === 'custom_combobox',
+                  tag,
+                  type,
                   id: element.id || '',
                   name: element.getAttribute('name') || '',
                   label: labelFor(element),
                   placeholder: element.getAttribute('placeholder') || '',
                   aria_label: element.getAttribute('aria-label') || '',
-                  role: element.getAttribute('role') || '',
+                  role,
+                  aria_controls:
+                    element.getAttribute('aria-controls') ||
+                    element.getAttribute('aria-owns') || '',
+                  expanded: element.getAttribute('aria-expanded') || '',
                   autocomplete: element.getAttribute('autocomplete') || '',
                   required: Boolean(
                     element.required || element.getAttribute('aria-required') === 'true'
@@ -603,7 +803,10 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
                         value: option.value,
                       }))
                     : [],
-                }));
+                };
+                })
+                .slice(0, maxControls)
+                .map((control, index) => ({ ...control, index }));
             }
             """,
             max_controls,
@@ -629,7 +832,8 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             frame = session.frame(frame_index)
         except ValueError as error:
             return frame_error(frame_index, error)
-        result = await frame.locator(selector).first.evaluate(
+        locator = await unique_locator(selector, frame_index)
+        result = await locator.evaluate(
             r"""
             (element) => {
               const clone = element.cloneNode(true);
@@ -647,35 +851,27 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         return result[:max_chars]
 
     @tool("browser_upload_file")
-    async def browser_upload_file(selector: str) -> str:
+    async def browser_upload_file(
+        selector: str,
+        file_id: FileId = "resume",
+        frame_index: int = 0,
+    ) -> str:
         """Upload one approved user-provided file to exactly one file input.
 
         Use only file IDs exposed in the application context, such as
         'resume' or 'cover_letter'.
         """
-        uploadable_file = session.state.get("resume")
+        uploadable_file = session.state.get(file_id)
         if uploadable_file is None:
-            return (
-                "Upload failed: resume file is not available in the session context. "
-                "The application process should terminate."
+            raise RuntimeError(
+                f"Upload failed: file {file_id!r} is not available in session state."
             )
-
-        locator = session.page().locator(selector)
-        count = await locator.count()
-
-        if count == 0:
-            return f"Upload failed: no element matched {selector!r}"
-
-        if count > 1:
-            return (
-                f"Upload failed: selector {selector!r} matched {count} elements; "
-                "inspect the page and provide a unique selector."
-            )
-
-        element = locator.first
-
-        if await element.get_attribute("type") != "file":
-            return f"Upload failed: {selector!r} is not a file input"
+        element = await unique_locator(selector, frame_index)
+        await assert_element_kind(
+            element,
+            allowed_tags={"input"},
+            allowed_types={"file"},
+        )
 
         await element.set_input_files(
             {
@@ -685,16 +881,16 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             }
         )
 
-        uploaded_names = await element.evaluate(
-            """input => Array.from(input.files ?? []).map(file => file.name)"""
-        )
-
-        if uploadable_file.filename not in uploaded_names:
-            return f"Upload could not be verified for " f"{uploadable_file.filename!r}"
-
-        return (
-            f"File input accepted {uploadable_file.filename!r}. "
-            "Inspect the page for upload progress or validation errors."
+        return success(
+            "upload_file",
+            selector=selector,
+            file_id=file_id,
+            filename=uploadable_file.filename,
+            frame_index=frame_index,
+            next_action=(
+                "Inspect the page for the attached filename, upload progress, "
+                "or validation errors."
+            ),
         )
 
     return [
@@ -702,6 +898,7 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         browser_click,
         browser_fill_text,
         browser_select_dropdown,
+        browser_select_combobox_option,
         browser_set_checkbox,
         browser_click_boolean_icon,
         browser_press_key,
@@ -716,4 +913,5 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         browser_inspect_form_controls,
         browser_read_dom,
         browser_upload_file,
+        pause_interaction,
     ]

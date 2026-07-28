@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 from langchain.messages import AIMessage
+from langgraph.graph import END
 from langgraph.runtime import Runtime
 
 from job_bot.adt import ApplicationStage, JobAgentState, JobPageType
@@ -13,7 +14,16 @@ from job_bot.agent.nodes import (
     should_invoke_tool,
     tool_call_node,
 )
-from job_bot.agent.react_applier import build_applier_agent
+from job_bot.agent.react_applier import (
+    MAX_MODEL_ACTIONS,
+    ApplicationEvaluation,
+    ApplicationStatus,
+    JobAppState,
+    build_applier_agent,
+    post_act_router,
+    post_evaluate_router,
+    post_tool_router,
+)
 
 
 class FakePage:
@@ -101,3 +111,41 @@ def test_submission_confirmation_transitions_to_submitted() -> None:
     update = asyncio.run(infer_application_stage(state, Runtime(context=SimpleNamespace())))
 
     assert update == {"application_stage": ApplicationStage.SUBMITTED}
+
+
+def test_post_evaluate_router_uses_structured_evaluation() -> None:
+    submitted = JobAppState(
+        messages=[],
+        evaluation=ApplicationEvaluation(
+            status=ApplicationStatus.SUBMITTED,
+            reason="Confirmation page is visible.",
+        ),
+    )
+    in_progress = JobAppState(
+        messages=[],
+        evaluation=ApplicationEvaluation(
+            status=ApplicationStatus.IN_PROGRESS,
+            reason="Required fields remain.",
+        ),
+    )
+
+    assert post_evaluate_router(submitted) == END
+    assert post_evaluate_router(in_progress) == "act"
+
+
+def test_post_act_router_stops_at_model_action_limit() -> None:
+    state = JobAppState(
+        messages=[AIMessage(content="")],
+        action_count=MAX_MODEL_ACTIONS,
+    )
+
+    assert post_act_router(state) == END
+
+
+def test_post_tool_router_stops_before_another_model_call_after_failures() -> None:
+    state = JobAppState(
+        messages=[],
+        consecutive_failures=5,
+    )
+
+    assert post_tool_router(state) == END

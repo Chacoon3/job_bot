@@ -135,10 +135,6 @@ class FakePageLocator:
             return "file"
         return None
 
-    async def evaluate(self, expression: str) -> list[str]:
-        assert "input.files" in expression
-        return [self.page.uploaded_files["name"]]
-
 
 def _session_with_pages(*pages: FakePage) -> BrowserSession:
     session = BrowserSession(playwright=SimpleNamespace())
@@ -329,4 +325,5 @@ def test_upload_file_uses_in_memory_playwright_payload() -> None:
         "mimeType": "application/pdf",
         "buffer": b"pdf-bytes",
     }
-    assert result.startswith("File input accepted 'resume.pdf'")
+    assert result.startswith("Submitted 'resume.pdf' to the file input")
+    assert "inspect the page now" in result

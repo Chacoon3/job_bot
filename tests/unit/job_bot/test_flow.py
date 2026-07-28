@@ -85,6 +85,7 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
         name="Alex Doe",
         email="alex@example.com",
         phone="555-0100",
+        phone_area_code="555",
         linkedin_url="https://linkedin.com/in/alexdoe",
         github_url="https://github.com/alexdoe",
         portfolio_url="https://alexdoe.dev",

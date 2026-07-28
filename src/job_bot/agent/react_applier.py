@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import random
-from enum import Enum
+from enum import StrEnum
 from functools import cache
 from typing import Annotated
 
@@ -23,7 +23,7 @@ from job_bot.utils.decorators import log_upon_exit
 from job_bot.utils.file_upload import UploadableFile
 
 
-class ApplicationStatus(str, Enum):
+class ApplicationStatus(StrEnum):
     """Classify the current status of a job application."""
 
     IN_PROGRESS = "in_progress"
@@ -34,6 +34,11 @@ class ApplicationStatus(str, Enum):
 class ApplicationEvaluation(BaseModel):
     status: ApplicationStatus
     reason: str
+
+
+MAX_MODEL_ACTIONS = 40
+MAX_CONSECUTIVE_FAILURES = 5
+GRAPH_RECURSION_LIMIT = 100
 
 
 class JobAppState(BaseModel):
@@ -54,7 +59,11 @@ async def init(state: JobAppState, runtime: Runtime[JobAgentContext]) -> dict:
         messages=[
             SystemMessage(content=JOB_APPSYS_MSG_TEXT),
             HumanMessage(
-                content=f"Here is a brief summary of my profile: {state.profile.to_prompt_text()}.\nComplete the job application at the url: {state.job_url}."
+                content=(
+                    f"Here is a brief summary of my profile: "
+                    f"{state.profile.to_prompt_text()}.\n"
+                    f"Complete the job application at the url: {state.job_url}."
+                )
             ),
         ],
         job_url=state.job_url,
@@ -109,6 +118,7 @@ async def use_tool(
     tool_registry = {tool.name: tool for tool in runtime.context.browser_tools}
 
     tool_messages: list[ToolMessage] = []
+    failed_calls = 0
 
     if len(last_message.tool_calls) > 1:
         get_logger().warning(
@@ -120,6 +130,12 @@ async def use_tool(
         tool = tool_registry.get(tool_call["name"])
         if tool is None:
             result = f"Unsupported tool: {tool_call['name']}"
+            failed_calls += 1
+            get_logger().error(
+                "Unsupported tool requested.",
+                tool_name=tool_call["name"],
+                tool_args=tool_call["args"],
+            )
         else:
             try:
                 result = await tool.ainvoke(tool_call["args"])
@@ -129,6 +145,7 @@ async def use_tool(
                     tool_args=tool_call["args"],
                 )
             except Exception as exc:
+                failed_calls += 1
                 result = f"Tool execution failed: " f"{type(exc).__name__}: {exc}"
                 get_logger().error(
                     "Tool execution failed.",
@@ -149,13 +166,27 @@ async def use_tool(
     return JobAppState(
         messages=tool_messages,
         action_count=state.action_count,
-        consecutive_failures=state.consecutive_failures,
+        consecutive_failures=(state.consecutive_failures + failed_calls if failed_calls else 0),
     )
 
 
 def post_act_router(state: JobAppState) -> str:
     if not state.messages:
         raise RuntimeError("Agent state contains no messages.")
+
+    if state.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+        get_logger().warning(
+            "Too many consecutive failures. Ending the application process.",
+            consecutive_failures=state.consecutive_failures,
+        )
+        return END
+
+    if state.action_count >= MAX_MODEL_ACTIONS:
+        get_logger().warning(
+            "Too many model actions. Ending the application process.",
+            action_count=state.action_count,
+        )
+        return END
 
     last_message = state.messages[-1]
 
@@ -165,35 +196,30 @@ def post_act_router(state: JobAppState) -> str:
     return "evaluate"
 
 
+def post_tool_router(state: JobAppState) -> str:
+    if state.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+        get_logger().warning(
+            "Too many consecutive tool failures. Ending the application process.",
+            consecutive_failures=state.consecutive_failures,
+        )
+        return END
+    if state.action_count >= MAX_MODEL_ACTIONS:
+        return END
+    return "act"
+
+
 def post_evaluate_router(state: JobAppState) -> str:
-    if not state.messages:
-        raise RuntimeError("Agent state contains no messages.")
+    if state.evaluation is None:
+        raise RuntimeError("Application evaluation is missing.")
 
-    last_message = state.messages[-1]
+    if state.evaluation.status is ApplicationStatus.IN_PROGRESS:
+        if state.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+            return END
+        if state.action_count >= MAX_MODEL_ACTIONS:
+            return END
+        return "act"
 
-    if isinstance(last_message, AIMessage):
-        if last_message.tool_calls:
-            return "use_tool"
-        if isinstance(ApplicationStatus(last_message.content), ApplicationStatus):
-            status = ApplicationStatus(last_message.content)
-            if status == ApplicationStatus.IN_PROGRESS:
-                if state.consecutive_failures >= 5:
-                    get_logger().warning(
-                        "Too many consecutive failures. Ending the application process.",
-                        consecutive_failures=state.consecutive_failures,
-                    )
-                    return END
-                if state.action_count >= 20:
-                    get_logger().warning(
-                        "Too many actions taken. Ending the application process.",
-                        action_count=state.action_count,
-                    )
-                    return END
-                return "act"
-            if status == ApplicationStatus.SUBMITTED or status == ApplicationStatus.ERROR:
-                return END
-
-    raise RuntimeError("Unexpected message type or content in post_evaluate_router.")
+    return END
 
 
 @cache
@@ -208,7 +234,7 @@ def build_applier_agent() -> CompiledStateGraph:
     graph.add_edge(START, "init")
     graph.add_edge("init", "act")
     graph.add_conditional_edges("act", post_act_router)
-    graph.add_edge("use_tool", "act")
+    graph.add_conditional_edges("use_tool", post_tool_router)
     graph.add_conditional_edges("evaluate", post_evaluate_router)
 
     return graph.compile()
@@ -236,6 +262,6 @@ async def apply_for_job(
                     messages=[],
                     profile=profile,
                 ),
-                config={"recursion_limit": 20},
+                config={"recursion_limit": GRAPH_RECURSION_LIMIT},
                 context=context,
             )
