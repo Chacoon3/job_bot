@@ -16,8 +16,6 @@ from playwright.async_api import (
 )
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from job_bot.utils.file_upload import UploadableFile
-
 WaitUntil = Literal["load", "domcontentloaded", "networkidle", "commit"]
 SelectBy = Literal["value", "label", "index"]
 
@@ -34,6 +32,7 @@ class BrowserSession:
     _browser: Browser | None = field(default=None, init=False, repr=False)
     _context: BrowserContext | None = field(default=None, init=False, repr=False)
     _page: Page | None = field(default=None, init=False, repr=False)
+    state: dict = field(default_factory=dict, init=False, repr=False)
 
     @property
     def started(self) -> bool:
@@ -119,9 +118,21 @@ async def _select_option(
     option: str,
     select_by: SelectBy,
 ) -> None:
-    locator = page.locator(selector).first
-    await locator.scroll_into_view_if_needed()
-    await locator.wait_for(state="visible")
+    matches = page.locator(selector)
+    count = await matches.count()
+    if count == 0:
+        raise ValueError(
+            f"No element matched {selector!r}. Call browser_inspect_form_controls and use "
+            "an exact selector returned by that tool."
+        )
+    if count > 1:
+        raise ValueError(
+            f"Selector {selector!r} matched {count} elements. Call "
+            "browser_inspect_form_controls and use a unique selector."
+        )
+    locator = matches.first
+    await locator.wait_for(state="visible", timeout=5_000)
+    await locator.scroll_into_view_if_needed(timeout=5_000)
     if select_by == "label":
         await locator.select_option(label=option)
     elif select_by == "index":
@@ -134,8 +145,23 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
     """Build async-only tools over an already-started browser session."""
 
     async def prepare_for_interaction(locator: Locator) -> None:
-        await locator.scroll_into_view_if_needed()
-        await locator.wait_for(state="visible")
+        await locator.wait_for(state="visible", timeout=5_000)
+        await locator.scroll_into_view_if_needed(timeout=5_000)
+
+    async def unique_locator(selector: str) -> Locator:
+        matches = session.page().locator(selector)
+        count = await matches.count()
+        if count == 0:
+            raise ValueError(
+                f"No element matched {selector!r}. Call browser_inspect_form_controls and use "
+                "an exact selector returned by that tool."
+            )
+        if count > 1:
+            raise ValueError(
+                f"Selector {selector!r} matched {count} elements. Call "
+                "browser_inspect_form_controls and use a unique selector."
+            )
+        return matches.first
 
     def frame_error(frame_index: int, error: ValueError) -> str:
         page = session.page()
@@ -220,8 +246,8 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
 
     @tool("browser_fill_text")
     async def browser_fill_text(selector: str, text: str) -> str:
-        """Fill the first text field matching a selector."""
-        locator = session.page().locator(selector).first
+        """Fill one text field using an exact selector from browser_inspect_form_controls."""
+        locator = await unique_locator(selector)
         await prepare_for_interaction(locator)
         await locator.fill(text)
         return f"Filled {selector}"
@@ -232,7 +258,7 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         option: str,
         select_by: SelectBy = "value",
     ) -> str:
-        """Select a dropdown option by value, label, or zero-based index."""
+        """Select an option using a selector and option exposed by form-control inspection."""
         await _select_option(session.page(), selector, option, select_by)
         return f"Selected '{option}' in {selector} by {select_by}"
 
@@ -295,7 +321,11 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         max_interactive: int = 100,
         max_text_chars: int = 4_000,
     ) -> str:
-        """Inspect page state, visible text, links, buttons, and form summaries before acting."""
+        """Inspect page state, links, buttons, and form summaries.
+
+        This tool does not expose editable field selectors. When an application form is
+        present, call browser_inspect_form_controls before filling any field.
+        """
         if not 1 <= max_interactive <= 500:
             raise ValueError("max_interactive must be between 1 and 500")
         if not 1 <= max_text_chars <= 20_000:
@@ -412,7 +442,9 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             "guidance": (
                 "Determine the current page type before acting. On a job-description page, "
                 "click the relevant Apply control before inspecting or filling form fields. "
-                "Ignore newsletter, search, sign-in, and job-alert forms."
+                "Ignore newsletter, search, sign-in, and job-alert forms. If this is an "
+                "application form, call browser_inspect_form_controls next; do not guess field "
+                "selectors from labels or form text."
             ),
         }
         return json.dumps(result, ensure_ascii=False, indent=2)
@@ -478,7 +510,11 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         frame_index: int = 0,
         max_controls: int = 100,
     ) -> str:
-        """Inspect form controls in a frame, including labels, names, ARIA data, and selectors."""
+        """Return exact selectors, labels, and options for form controls.
+
+        Call this before filling an application form. Interaction tools must receive the exact
+        selector returned here rather than a selector inferred from a label.
+        """
         if not 1 <= max_controls <= 500:
             raise ValueError("max_controls must be between 1 and 500")
         try:
@@ -611,16 +647,55 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         return result[:max_chars]
 
     @tool("browser_upload_file")
-    async def browser_upload_file(selector: str, uploadable_file: UploadableFile) -> str:
-        """Upload an in-memory user-provided file through the first matching file input."""
-        await session.page().locator(selector).first.set_input_files(
+    async def browser_upload_file(selector: str) -> str:
+        """Upload one approved user-provided file to exactly one file input.
+
+        Use only file IDs exposed in the application context, such as
+        'resume' or 'cover_letter'.
+        """
+        uploadable_file = session.state.get("resume")
+        if uploadable_file is None:
+            return (
+                "Upload failed: resume file is not available in the session context. "
+                "The application process should terminate."
+            )
+
+        locator = session.page().locator(selector)
+        count = await locator.count()
+
+        if count == 0:
+            return f"Upload failed: no element matched {selector!r}"
+
+        if count > 1:
+            return (
+                f"Upload failed: selector {selector!r} matched {count} elements; "
+                "inspect the page and provide a unique selector."
+            )
+
+        element = locator.first
+
+        if await element.get_attribute("type") != "file":
+            return f"Upload failed: {selector!r} is not a file input"
+
+        await element.set_input_files(
             {
                 "name": uploadable_file.filename,
                 "mimeType": uploadable_file.mime_type,
                 "buffer": uploadable_file.content,
             }
         )
-        return f"Uploaded {uploadable_file.filename} using {selector}"
+
+        uploaded_names = await element.evaluate(
+            """input => Array.from(input.files ?? []).map(file => file.name)"""
+        )
+
+        if uploadable_file.filename not in uploaded_names:
+            return f"Upload could not be verified for " f"{uploadable_file.filename!r}"
+
+        return (
+            f"File input accepted {uploadable_file.filename!r}. "
+            "Inspect the page for upload progress or validation errors."
+        )
 
     return [
         browser_open_url,

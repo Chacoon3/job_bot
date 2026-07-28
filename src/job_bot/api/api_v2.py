@@ -7,7 +7,7 @@ from job_bot.db.app_redis import AppRedisAsync
 from job_bot.llm import OpenAILLMProvider
 from job_bot.resume_parser import parse_resume
 from job_bot.schemas import CandidateProfile
-from job_bot.utils.file_upload import parse_pure_text_pdf
+from job_bot.utils.file_upload import extract_uploadable_file, parse_pure_text_pdf
 
 router = APIRouter(prefix="/apiv2", tags=["job_bot"])
 
@@ -15,19 +15,10 @@ router = APIRouter(prefix="/apiv2", tags=["job_bot"])
 @router.post("/apply")
 async def api_apply(request: Request):
     form = await request.form()
-    uploaded_file = form.get("file")
     job_url = form.get("job_url")
-
-    if not uploaded_file:
-        return {"error": "No file uploaded"}
-
-    # Check if file is PDF or Word document
-    filename = uploaded_file.filename
-    if not (filename.endswith(".pdf") or filename.endswith((".doc", ".docx"))):
-        return {"error": "File must be PDF or Word document"}
-
+    uploadable = await extract_uploadable_file(request)
     # Read file content
-    content = await uploaded_file.read()
+    content = uploadable.content
 
     profile_hash = hashlib.sha256(content).hexdigest()
 
@@ -37,9 +28,9 @@ async def api_apply(request: Request):
     if profile_json:
         profile = CandidateProfile.model_validate_json(profile_json)
     else:
-        if filename.endswith(".pdf"):
+        if uploadable.filename.endswith(".pdf"):
             resume_str = parse_pure_text_pdf(content)
-        # elif filename.endswith((".doc", ".docx")):
+        # elif uploadable.filename.endswith((".doc", ".docx")):
         #     resume_str = parse_pure_text_word(content)
         else:
             return {"error": "Unsupported file type"}
@@ -47,7 +38,5 @@ async def api_apply(request: Request):
         profile = parse_resume(resume_str)
         await AppRedisAsync.set(profile_hash_key, profile.model_dump_json())
 
-    res = await apply_for_job(
-        job_url, profile, content, parse_pure_text_pdf(content), model_provider=OpenAILLMProvider()
-    )
+    res = await apply_for_job(job_url, profile, uploadable, model_provider=OpenAILLMProvider())
     return res

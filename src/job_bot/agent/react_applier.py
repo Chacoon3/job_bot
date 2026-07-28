@@ -7,7 +7,6 @@ from functools import cache
 from typing import Annotated
 
 from langchain.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_community.tools import tool
 from langgraph.graph import END, StateGraph, add_messages
 from langgraph.graph.state import START, CompiledStateGraph
 from langgraph.runtime import Runtime
@@ -21,6 +20,7 @@ from job_bot.llm import LLMProvider
 from job_bot.schemas import CandidateProfile
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 from job_bot.utils.decorators import log_upon_exit
+from job_bot.utils.file_upload import UploadableFile
 
 
 class ApplicationStatus(str, Enum):
@@ -43,8 +43,6 @@ class JobAppState(BaseModel):
     consecutive_failures: int = 0
     evaluation: ApplicationEvaluation | None = None
     profile: CandidateProfile | None = None
-    resume: bytes | None = None
-    resume_text: str | None = None
 
 
 @log_upon_exit
@@ -129,7 +127,6 @@ async def use_tool(
                     "Tool executed successfully.",
                     tool_name=tool_call["name"],
                     tool_args=tool_call["args"],
-                    tool_result=result,
                 )
             except Exception as exc:
                 result = f"Tool execution failed: " f"{type(exc).__name__}: {exc}"
@@ -220,20 +217,16 @@ def build_applier_agent() -> CompiledStateGraph:
 async def apply_for_job(
     job_url: str,
     profile: CandidateProfile,
-    resume: bytes,
-    resume_text: str,
+    resume: UploadableFile,
     model_provider: LLMProvider,
 ):
     agent = build_applier_agent()
 
-    @tool(description="Get the resume file to upload to the job application website.")
-    async def get_resume_file() -> bytes:
-        return resume
-
     async with async_playwright() as playwright:
         async with BrowserSession(playwright=playwright, headless=False) as session:
+            session.state["resume"] = resume
             browser_tools = build_browser_tools(session)
-            model = model_provider.get_model().bind_tools([get_resume_file, *browser_tools])
+            model = model_provider.get_model().bind_tools(browser_tools)
             context = JobAgentContext(
                 job_url=job_url, browser_session=session, browser_tools=browser_tools, model=model
             )
@@ -241,9 +234,8 @@ async def apply_for_job(
                 JobAppState(
                     job_url=job_url,
                     messages=[],
-                    resume=resume,
-                    resume_text=resume_text,
                     profile=profile,
                 ),
+                config={"recursion_limit": 20},
                 context=context,
             )

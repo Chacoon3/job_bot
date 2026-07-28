@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from job_bot.utils.browser_tools import BrowserSession, UploadableFile, build_browser_tools
+from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
+from job_bot.utils.file_upload import UploadableFile
 
 
 class FakeLocator:
@@ -71,6 +72,7 @@ class FakePage:
         self.front = False
         self.timeout = 0
         self.click_callback = None
+        self.selector_counts: dict[str, int] = {}
 
     def is_closed(self) -> bool:
         return self.closed
@@ -107,11 +109,18 @@ class FakePageLocator:
     def first(self) -> "FakePageLocator":
         return self
 
-    async def scroll_into_view_if_needed(self) -> None:
+    async def count(self) -> int:
+        return self.page.selector_counts.get(self.selector, 1)
+
+    async def scroll_into_view_if_needed(self, timeout: int | None = None) -> None:
+        if timeout is not None:
+            assert timeout == 5_000
         return None
 
-    async def wait_for(self, state: str) -> None:
+    async def wait_for(self, state: str, timeout: int | None = None) -> None:
         assert state == "visible"
+        if timeout is not None:
+            assert timeout == 5_000
 
     async def click(self) -> None:
         assert self.selector == "#apply"
@@ -120,6 +129,15 @@ class FakePageLocator:
 
     async def set_input_files(self, files: object) -> None:
         self.page.uploaded_files = files
+
+    async def get_attribute(self, name: str) -> str | None:
+        if name == "type" and self.selector == 'input[type="file"]':
+            return "file"
+        return None
+
+    async def evaluate(self, expression: str) -> list[str]:
+        assert "input.files" in expression
+        return [self.page.uploaded_files["name"]]
 
 
 def _session_with_pages(*pages: FakePage) -> BrowserSession:
@@ -199,6 +217,21 @@ def test_page_inspection_distinguishes_apply_action_from_job_alert_form() -> Non
     assert snapshot["interactive"][0]["selector"] == "#apply"
     assert snapshot["forms"][0]["context"] == "Get job alerts by email"
     assert "click the relevant Apply control" in snapshot["guidance"]
+    assert "browser_inspect_form_controls" in snapshot["guidance"]
+
+
+def test_fill_text_rejects_unknown_selector_without_waiting() -> None:
+    frame = FakeFrame("", "https://example.com/application")
+    page = FakePage("https://example.com/application", "Application", [frame])
+    page.selector_counts['input[name="guessed_name"]'] = 0
+    tools = build_browser_tools(_session_with_pages(page))
+
+    with pytest.raises(ValueError, match="browser_inspect_form_controls"):
+        asyncio.run(
+            _tool(tools, "browser_fill_text").ainvoke(
+                {"selector": 'input[name="guessed_name"]', "text": "Zizheng"}
+            )
+        )
 
 
 def test_click_apply_follows_new_application_tab() -> None:
@@ -279,19 +312,16 @@ def test_uploadable_file_defaults_to_binary_mime_type_and_requires_content() -> 
 def test_upload_file_uses_in_memory_playwright_payload() -> None:
     frame = FakeFrame("", "https://example.com/application")
     page = FakePage("https://example.com/application", "Application", [frame])
-    tools = build_browser_tools(_session_with_pages(page))
+    session = _session_with_pages(page)
+    session.state["resume"] = UploadableFile(
+        filename="resume.pdf",
+        content=b"pdf-bytes",
+        mime_type="application/pdf",
+    )
+    tools = build_browser_tools(session)
 
     result = asyncio.run(
-        _tool(tools, "browser_upload_file").ainvoke(
-            {
-                "selector": 'input[type="file"]',
-                "uploadable_file": {
-                    "filename": "resume.pdf",
-                    "content": b"pdf-bytes",
-                    "mime_type": "application/pdf",
-                },
-            }
-        )
+        _tool(tools, "browser_upload_file").ainvoke({"selector": 'input[type="file"]'})
     )
 
     assert page.uploaded_files == {
@@ -299,4 +329,4 @@ def test_upload_file_uses_in_memory_playwright_payload() -> None:
         "mimeType": "application/pdf",
         "buffer": b"pdf-bytes",
     }
-    assert result == 'Uploaded resume.pdf using input[type="file"]'
+    assert result.startswith("File input accepted 'resume.pdf'")
