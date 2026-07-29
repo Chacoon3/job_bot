@@ -19,9 +19,9 @@ from job_bot.db.job_models import JobEntry
 from job_bot.db.upsert import batched_upsert
 from job_bot.job_providers.llm_job_provider import LLMJobProvider
 from job_bot.llm import OpenAILLMProvider
-from job_bot.resume_parser import parse_resume
 from job_bot.schemas import CandidateProfile, JobEntrySchema
 from job_bot.utils.file_upload import parse_pure_text_pdf
+from job_bot.utils.resume_parser import ai_parse_resume
 
 router = APIRouter(prefix="/api", tags=["job_bot"])
 
@@ -160,7 +160,7 @@ async def api_apply(request: Request) -> ApplicationStatus:
         else:
             return {"error": "Unsupported file type"}
 
-        profile = parse_resume(resume_str)
+        profile = ai_parse_resume(resume_str)
         await AppRedisAsync.set(profile_hash_key, profile.model_dump_json())
 
     status = await apply_job(job_url, profile)
@@ -210,7 +210,7 @@ async def api_apply_jobs(request: Request) -> list[ApplicationStatus]:
         else:
             return {"error": "Unsupported file type"}
 
-        profile = parse_resume(resume_str)
+        profile = ai_parse_resume(resume_str)
         await AppRedisAsync.set(profile_hash_key, profile.model_dump_json())
 
     jobs = await apply_jobs(criteria, profile)

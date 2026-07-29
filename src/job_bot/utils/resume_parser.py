@@ -20,7 +20,7 @@ The "summary" field should be a concise summary of the candidate's qualification
 """
 
 
-def parse_resume(resume: str) -> CandidateProfile:
+def ai_parse_resume(resume: str) -> CandidateProfile:
     """
     Parse a resume file and extract candidate information.
 
