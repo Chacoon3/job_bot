@@ -2,7 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from job_bot.openai_client import _reset_openai_client_for_tests, get_openai_client
+from job_bot.openai_client import get_openai_client
 
 
 def test_get_openai_client_returns_singleton(monkeypatch) -> None:
@@ -17,8 +17,7 @@ def test_get_openai_client_returns_singleton(monkeypatch) -> None:
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr("job_bot.openai_client.OpenAI", fake_openai)
-    _reset_openai_client_for_tests()
-
+    get_openai_client.cache_clear()
     first = get_openai_client()
     second = get_openai_client()
 
@@ -38,8 +37,7 @@ def test_get_openai_client_recreates_when_config_changes(monkeypatch) -> None:
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr("job_bot.openai_client.OpenAI", fake_openai)
-    _reset_openai_client_for_tests()
-
+    get_openai_client.cache_clear()
     first = get_openai_client(base_url="https://api.example.com/v1")
     second = get_openai_client(base_url="https://api.example.com/v2")
 
@@ -49,7 +47,6 @@ def test_get_openai_client_recreates_when_config_changes(monkeypatch) -> None:
 
 def test_get_openai_client_raises_without_api_key(monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    _reset_openai_client_for_tests()
-
+    get_openai_client.cache_clear()
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
         get_openai_client()
