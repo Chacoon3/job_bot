@@ -1,3 +1,4 @@
+import random
 from typing import Protocol
 
 from playwright.async_api import Page
@@ -25,11 +26,11 @@ def locate_by_accessible_name(
 
 
 async def fill_text_field(locator: Locator, value: str) -> None:
-    if await locator.count() != 1:
-        raise LookupError(f"Expected exactly one text field, found {await locator.count()}")
+    count = await locator.count()
+    if count != 1:
+        raise LookupError(f"Expected exactly one text field, found {count}")
 
-    if not await locator.is_visible():
-        raise ValueError("Text field is not visible")
+    await locator.wait_for(state="visible", timeout=5000)
 
     if not await locator.is_enabled():
         raise ValueError("Text field is disabled")
@@ -37,7 +38,16 @@ async def fill_text_field(locator: Locator, value: str) -> None:
     if not await locator.is_editable():
         raise ValueError("Text field is not editable")
 
-    await locator.fill(value)
+    await locator.click()
+    await locator.press("ControlOrMeta+A")
+    await locator.press("Backspace")
+    for character in value:
+        await locator.press_sequentially(character, delay=random.randint(35, 110))
+    await locator.press("Tab")  # Trigger blur/change.
+
+    actual = await locator.input_value()
+    if actual != value:
+        raise RuntimeError(f"Field did not retain value: expected={value!r}, actual={actual!r}")
 
 
 class Filler(Protocol):

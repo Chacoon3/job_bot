@@ -167,8 +167,8 @@ FieldKey = Literal[
     "postal_code",
     "country",
     # Application materials
-    "resume",
-    "cover_letter",
+    "attach_resume_button",
+    "attach_cover_letter_button",
     # Online profiles
     "linkedin_url",
     "github_url",
