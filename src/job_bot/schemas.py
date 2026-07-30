@@ -108,57 +108,13 @@ class EducationDegree(BaseModel):
     gpa: float
 
 
-class CandidateProfile(BaseModel):
-    first_name: str
-    last_name: str
-    email: str
-    phone_country_code: str
-    country: str
-    phone: str
-    linkedin_url: str | None = None
-    github_url: str | None = None
-    portfolio_url: str | None = None
-    education: list[EducationDegree]
-    resume_text: str
-    resume_file: bytes | None = None
-    require_sponsorship: bool = True
-    disabled: bool = False
-    veteran: bool = False
-    is_hispanic_or_latino: bool = False
-    race: str = "Asian"
-    summary: str
-
-    def to_prompt_text(self) -> str:
-        """Convert the candidate profile to a prompt text for LLMs."""
-
-        education_str = "\n".join(
-            [
-                f"- {edu.degree} in {edu.field_of_study} from {edu.institution} "
-                f"({edu.duration_minimum}-{edu.duration_maximum} years, GPA: {edu.gpa})"
-                for edu in self.education
-            ]
-        )
-        return (
-            f"Name: {self.first_name}\n"
-            f"Email: {self.email}\n"
-            f"Phone Country Code: {self.phone_country_code}\n"
-            f"Phone: {self.phone}\n"
-            f"LinkedIn: {self.linkedin_url}\n"
-            f"GitHub: {self.github_url}\n"
-            f"Portfolio: {self.portfolio_url}\n"
-            f"Require Sponsorship: {'Yes' if self.require_sponsorship else 'No'}\n"
-            f"Education:\n{education_str}\n"
-            f"Resume Text:\n{self.resume_text}\n"
-            f"Summary:\n{self.summary}"
-        )
-
-
 FieldKey = Literal[
     # Identity
     "first_name",
     "last_name",
     # Contact
     "email",
+    "phone_country",
     "phone",
     "address_line_1",
     "address_line_2",
@@ -185,7 +141,7 @@ FieldKey = Literal[
     "referral_source",
     # Voluntary demographic / EEO
     "gender",
-    "hispanic_or_latino",
+    "is_hispanic_or_latino",
     "race",
     "disability_status",
     "veteran_status",
@@ -201,6 +157,85 @@ FieldKey = Literal[
 ]
 
 
+class CandidateProfile(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    phone_country: str
+    phone: str
+    address_line_1: str | None = None
+    address_line_2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+    resume_file: bytes | None = None
+    cover_letter_file: bytes | None = None
+
+    linkedin_url: str | None = None
+    github_url: str | None = None
+    portfolio_url: str | None = None
+    website_url: str | None = None
+
+    authorized_to_work: bool = True
+    requires_sponsorship: bool = True
+    visa_status: str | None = None
+
+    willing_to_relocate: bool = True
+    gender: str | None = None
+    is_hispanic_or_latino: bool = False
+    race: str = "Asian"
+    disability_status: bool = False
+    veteran_status: bool = False
+
+    education: list[EducationDegree]
+    resume_text: str
+    summary: str
+
+    def to_prompt_text(self) -> str:
+        """Convert the candidate profile to a prompt text for LLMs."""
+
+        education_str = "\n".join(
+            [
+                f"- {edu.degree} in {edu.field_of_study} from {edu.institution} "
+                f"({edu.duration_minimum}-{edu.duration_maximum} years, GPA: {edu.gpa})"
+                for edu in self.education
+            ]
+        )
+        return (
+            f"Name: {self.first_name} {self.last_name}\n"
+            f"Email: {self.email}\n"
+            f"Phone Country Code: {self.phone_country}\n"
+            f"Phone: {self.phone}\n"
+            f"LinkedIn: {self.linkedin_url}\n"
+            f"GitHub: {self.github_url}\n"
+            f"Portfolio: {self.portfolio_url}\n"
+            f"Requires Sponsorship: {'Yes' if self.requires_sponsorship else 'No'}\n"
+            f"Education:\n{education_str}\n"
+            f"Resume Text:\n{self.resume_text}\n"
+            f"Summary:\n{self.summary}"
+        )
+
+    def get_answer(self, field_key: FieldKey) -> str | bool | None:
+        """Get the answer for a given field key."""
+        return getattr(self, field_key, None)
+
+
+InteractionKind = Literal[
+    "text",
+    "textarea",
+    "select",
+    "autocomplete",
+    "radio",
+    "checkbox",
+    "file_upload",
+    "button",
+    "contenteditable",
+    "date",
+    "unknown",
+]
+
+
 class FormOption(BaseModel):
     label: str
     value: str | None = None
@@ -211,6 +246,8 @@ class FormOption(BaseModel):
 class FormField(BaseModel):
     # 内部稳定标识，不一定等于 DOM id
     field_key: FieldKey | None = None
+
+    interaction_kind: InteractionKind = "unknown"
 
     # DOM 身份信息
     element_id: str | None = None
@@ -255,3 +292,37 @@ class FormField(BaseModel):
     # iframe 信息
     frame_url: str | None = None
     frame_name: str | None = None
+
+
+class DropdownOption(BaseModel):
+    index: int
+    label: str
+    value: str | None = None
+    element_id: str | None = None
+    disabled: bool = False
+
+    # Some custom dropdowns do not expose selection semantically.
+    selected: bool | None = None
+
+    def __str__(self) -> str:
+        return f"DropdownOption(index={self.index}, label={self.label}, value={self.value}, selected={self.selected})"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
+class DropdownSnapshot(BaseModel):
+    kind: Literal[
+        "native_select",
+        "finite_combobox",
+        "autocomplete",
+    ]
+
+    options: list[DropdownOption] = Field(default_factory=list)
+
+    # True: all options are known.
+    # False: known to be partial.
+    # None: completeness cannot be determined.
+    complete: bool | None = None
+
+    listbox_id: str | None = None

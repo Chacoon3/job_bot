@@ -1,53 +1,15 @@
-import random
 from typing import Protocol
 
-from playwright.async_api import Page
+from playwright.async_api import expect
+from structlog import get_logger
 
-from job_bot.schemas import FormField
-from job_bot.utils.browser_tools import BrowserSession, Locator
-
-
-def locate_by_accessible_name(
-    page: Page,
-    accessible_name: str,
-    role: str | None = None,
-) -> Locator:
-    if role:
-        return page.get_by_role(
-            role,
-            name=accessible_name,
-            exact=True,
-        )
-
-    return page.get_by_label(
-        accessible_name,
-        exact=True,
-    )
-
-
-async def fill_text_field(locator: Locator, value: str) -> None:
-    count = await locator.count()
-    if count != 1:
-        raise LookupError(f"Expected exactly one text field, found {count}")
-
-    await locator.wait_for(state="visible", timeout=5000)
-
-    if not await locator.is_enabled():
-        raise ValueError("Text field is disabled")
-
-    if not await locator.is_editable():
-        raise ValueError("Text field is not editable")
-
-    await locator.click()
-    await locator.press("ControlOrMeta+A")
-    await locator.press("Backspace")
-    for character in value:
-        await locator.press_sequentially(character, delay=random.randint(35, 110))
-    await locator.press("Tab")  # Trigger blur/change.
-
-    actual = await locator.input_value()
-    if actual != value:
-        raise RuntimeError(f"Field did not retain value: expected={value!r}, actual={actual!r}")
+from job_bot.agent.filler_tools import (
+    extract_dropdown_options,
+    fill_text_field,
+    locate_by_accessible_name,
+)
+from job_bot.schemas import FormField, InteractionKind
+from job_bot.utils.browser_tools import BrowserSession
 
 
 class Filler(Protocol):
@@ -64,19 +26,28 @@ class GreenHouseFiller:
             field.accessible_name,
             field.role,
         )
+        await expect(locator).to_be_visible(timeout=5000)
         await fill_text_field(locator, value)
 
     async def fill(self, field: FormField, value: str) -> None:
-        match field.input_type:
+        field_interact_type: InteractionKind = field.interaction_kind
+        match field_interact_type:
             case "text":
                 await self.fill_text_field(field, value)
-            case "email":
-                await self.fill_text_field(field, value)
-            case "tel":
-                await self.fill_text_field(field, value)
-            case "url":
-                await self.fill_text_field(field, value)
-            case "number":
-                await self.fill_text_field(field, value)
+            case "select":
+                dropdown_snapshot = await extract_dropdown_options(
+                    self.browser_session.page(),
+                    locate_by_accessible_name(
+                        self.browser_session.page(),
+                        field.accessible_name,
+                        field.role,
+                    ),
+                )
+
+                get_logger().info(
+                    "dropdown options",
+                    dropdown_name=field.accessible_name,
+                    options=dropdown_snapshot.options[:5],
+                )
             case _:
-                raise ValueError(f"Unsupported input type: {field.input_type}")
+                raise ValueError(f"Unsupported interaction kind: {field.interaction_kind}")

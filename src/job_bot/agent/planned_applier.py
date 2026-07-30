@@ -68,6 +68,19 @@ async def inspect_page(url: str) -> list[FormField]:
                     "use null, an empty string, or an empty list when an attribute cannot be "
                     "verified. Do not invent hidden controls, options, values, selectors, or "
                     "frame details. Return only data matching the PageInspection schema."
+                    "Based on the nature of the element, you should also categorize it into "
+                    "one of the following interaction types: "
+                    "text, "
+                    "textarea, "
+                    "select, "
+                    "autocomplete, "
+                    "radio, "
+                    "checkbox, "
+                    "file_upload, "
+                    "button, "
+                    "contenteditable, "
+                    "date, "
+                    "unknown"
                 ),
             },
             {
@@ -183,8 +196,13 @@ async def agent_flow(url: str, playwright: Playwright):
 
     async with BrowserSession(playwright, False) as browser_session:
         page = browser_session.page()
-        await page.goto(url, wait_until="domcontentloaded")
-        fields = await inspect_page(url)
+
+        # do llm inspection and browser init in parallel
+        # ensure we start page operation at
+        res = await asyncio.gather(
+            inspect_page(url), page.goto(url, wait_until="domcontentloaded"), asyncio.sleep(5)
+        )
+        fields = res[0]
         filler = GreenHouseFiller(browser_session)
         for field in fields:
             try:
