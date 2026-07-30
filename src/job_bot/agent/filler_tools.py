@@ -206,7 +206,7 @@ async def select_dropdown_option(
     page: Page,
     dropdown: Locator,
     option_label: str,
-    fuzzy_matcher: Callable[[str, str], bool] | None = None,
+    regulator: Callable[[str], str] | None = None,
     *,
     timeout: float = 5_000,
 ) -> None:
@@ -219,9 +219,10 @@ async def select_dropdown_option(
     if not snapshot.options:
         raise OptionNotFoundError("Dropdown has no options")
 
-    matches = [
-        option for option in snapshot.options if option.label.lower() == option_label.lower()
-    ]
+    option_map: dict[str, str] = {
+        regulator(o.label) if regulator else o.label: o for o in snapshot.options
+    }
+    matches = [option_map.get(regulator(option_label) if regulator else option_label)]
 
     if not matches:
         raise OptionNotFoundError(f"No matching option found for label {option_label!r}")
