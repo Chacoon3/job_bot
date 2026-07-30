@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from functools import cache
 from operator import add
@@ -16,7 +17,7 @@ from playwright.async_api import Playwright
 from pydantic import BaseModel, ConfigDict, Field
 from structlog import get_logger
 
-from job_bot.agent.form_field_locator import resolve_field_locator
+from job_bot.agent.filler import GreenHouseFiller
 from job_bot.openai_client import get_async_openai_client
 from job_bot.schemas import CandidateProfile, FormField
 from job_bot.utils.browser_tools import BrowserSession
@@ -180,19 +181,25 @@ async def use_tool(
 
 async def agent_flow(url: str, playwright: Playwright):
 
-    async with BrowserSession(playwright) as browser_session:
-        await browser_session.start()
-        page = await browser_session.page().goto(url, wait_until="domcontentloaded")
+    async with BrowserSession(playwright, False) as browser_session:
+        page = browser_session.page()
+        await page.goto(url, wait_until="domcontentloaded")
         fields = await inspect_page(url)
-
+        filler = GreenHouseFiller(browser_session)
         for field in fields:
-            resolved = await resolve_field_locator(
-                page,
-                field,
-                require_editable=True,
-            )
+            try:
+                if field.input_type in ["text", "email", "tel", "url", "number"]:
+                    await filler.fill(
+                        field, "test_value"
+                    )  # Replace "test_value" with actual values as needed
+            except Exception as e:
+                get_logger().error(
+                    "Failed to fill field.",
+                    field=field,
+                    error=str(e),
+                )
 
-            await resolved.locator.fill("Zhang")
+        await asyncio.sleep(10)  # Adjust the duration as needed
 
 
 def route_after_inspection(state: _AgentState, context: _AgentContext) -> str:

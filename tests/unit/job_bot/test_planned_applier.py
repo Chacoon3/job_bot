@@ -1,13 +1,13 @@
+import asyncio
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from job_bot.agent.planned_applier import (
     FormField,
-    _AgentContext,
-    _AgentState,
     _PageInspection,
+    agent_flow,
     inspect_page,
 )
 
@@ -33,35 +33,69 @@ def _form_field() -> FormField:
 def test_inspect_page_extracts_form_fields_into_state_update(monkeypatch) -> None:
     field = _form_field()
     client = Mock()
-    client.responses.parse.return_value = SimpleNamespace(
-        output_parsed=_PageInspection(form_fields=[field])
+    client.responses.parse = AsyncMock(
+        return_value=SimpleNamespace(output_parsed=_PageInspection(form_fields=[field]))
     )
     monkeypatch.setattr(
-        "job_bot.agent.planned_applier.get_openai_client",
+        "job_bot.agent.planned_applier.get_async_openai_client",
         lambda: client,
     )
     monkeypatch.setenv("JOB_BOT_LLM_MODEL", "test-model")
-    state = _AgentState(messages=[], job_url="https://example.com/apply")
+    url = "https://example.com/apply?test=extract"
 
-    update = inspect_page(state, _AgentContext())
+    fields = asyncio.run(inspect_page.__wrapped__(url))
 
-    assert update == {"form_fields": [field]}
+    assert fields == [field]
     client.responses.parse.assert_called_once()
     request = client.responses.parse.call_args.kwargs
     assert request["model"] == "test-model"
     assert request["tools"] == [{"type": "web_search"}]
     assert request["text_format"] is _PageInspection
-    assert state.job_url in request["input"][1]["content"]
+    assert url in request["input"][1]["content"]
 
 
 def test_inspect_page_rejects_unparsed_response(monkeypatch) -> None:
     client = Mock()
-    client.responses.parse.return_value = SimpleNamespace(output_parsed=None)
+    client.responses.parse = AsyncMock(return_value=SimpleNamespace(output_parsed=None))
     monkeypatch.setattr(
-        "job_bot.agent.planned_applier.get_openai_client",
+        "job_bot.agent.planned_applier.get_async_openai_client",
         lambda: client,
     )
-    state = _AgentState(messages=[], job_url="https://example.com/apply")
 
     with pytest.raises(RuntimeError, match="Unexpected page inspection response type"):
-        inspect_page(state, _AgentContext())
+        asyncio.run(inspect_page.__wrapped__("https://example.com/apply?test=unparsed"))
+
+
+def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
+    field = _form_field()
+    navigation_response = object()
+    page = SimpleNamespace(goto=AsyncMock(return_value=navigation_response))
+    locator = SimpleNamespace(fill=AsyncMock())
+
+    class FakeBrowserSession:
+        def __init__(self, playwright: object) -> None:
+            self.playwright = playwright
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def page(self):
+            return page
+
+    inspect = AsyncMock(return_value=[field])
+    resolve = AsyncMock(return_value=SimpleNamespace(locator=locator))
+    monkeypatch.setattr("job_bot.agent.planned_applier.BrowserSession", FakeBrowserSession)
+    monkeypatch.setattr("job_bot.agent.planned_applier.inspect_page", inspect)
+    monkeypatch.setattr("job_bot.agent.planned_applier.resolve_field_locator", resolve)
+
+    asyncio.run(agent_flow("https://example.com/apply", SimpleNamespace()))
+
+    page.goto.assert_awaited_once_with(
+        "https://example.com/apply",
+        wait_until="domcontentloaded",
+    )
+    resolve.assert_awaited_once_with(page, field, require_editable=True)
+    locator.fill.assert_awaited_once_with("Zhang")
