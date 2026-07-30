@@ -50,7 +50,7 @@ class GreenHouseFiller:
 
     async def fill_text_field(self, field: FormField, value: str) -> None:
         locator = locate_by_accessible_name(
-            self.browser_session.page,
+            self.browser_session.page(),
             field.accessible_name,
             field.role,
         )
