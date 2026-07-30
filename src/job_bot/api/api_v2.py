@@ -1,8 +1,9 @@
 import hashlib
 
 from fastapi import APIRouter, Request
+from playwright.async_api import async_playwright
 
-from job_bot.agent.planned_applier import inspect_page
+from job_bot.agent.planned_applier import agent_flow
 from job_bot.agent.react_applier import apply_for_job
 from job_bot.db.app_redis import AppRedisAsync
 from job_bot.llm import OpenAILLMProvider
@@ -17,7 +18,9 @@ router = APIRouter(prefix="/apiv2", tags=["job_bot"])
 async def inspect(request: Request) -> dict:
     form = await request.form()
     job_url = form.get("job_url")
-    return await inspect_page(job_url)
+
+    async with async_playwright() as playwright:
+        return await agent_flow(job_url, playwright)
 
 
 @router.post("/apply")

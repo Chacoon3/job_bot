@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -206,20 +205,6 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             indent=2,
         )
 
-    @tool("pause_interaction")
-    async def pause_interaction(wait_seconds: float = 3) -> str:
-        """
-        utilize the asyncio.sleep method to pause the execution for the specified time (in seconds)
-
-        Args:
-            wait_seconds (float, optional): the time to wait in seconds. Defaults to 3.
-        """
-        if not 0 <= wait_seconds <= 30:
-            raise ValueError("wait_seconds must be between 0 and 30")
-        await asyncio.sleep(wait_seconds)
-        return success("pause", wait_seconds=wait_seconds)
-
-    @tool("browser_select_combobox_option")
     async def browser_select_combobox_option(
         selector: str,
         option: str,
@@ -286,7 +271,6 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             frame_index=frame_index,
         )
 
-    @tool("browser_open_url")
     async def browser_open_url(
         url: str,
         wait_until: WaitUntil = "domcontentloaded",
@@ -302,7 +286,6 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             "The page state may have changed; call browser_inspect_page now."
         )
 
-    @tool("browser_click")
     async def browser_click(selector: str, frame_index: int = 0) -> str:
         """Click an element, follow a newly opened tab, then report the resulting page state."""
         page = session.page()
@@ -335,7 +318,6 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         }
         return json.dumps(result, ensure_ascii=False, indent=2)
 
-    @tool("browser_fill_text")
     async def browser_fill_text(
         selector: str,
         text: str,
@@ -377,7 +359,6 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             frame_index=frame_index,
         )
 
-    @tool("browser_select_dropdown")
     async def browser_select_dropdown(
         selector: str,
         option: str,
@@ -404,7 +385,6 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             frame_index=frame_index,
         )
 
-    @tool("browser_set_checkbox")
     async def browser_set_checkbox(
         selector: str,
         checked: bool,
@@ -435,7 +415,6 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             frame_index=frame_index,
         )
 
-    @tool("browser_click_boolean_icon")
     async def browser_click_boolean_icon(
         true_selector: str,
         false_selector: str,
@@ -449,7 +428,6 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         await locator.click()
         return f"Clicked {'true' if value else 'false'} option using {selector}"
 
-    @tool("browser_press_key")
     async def browser_press_key(
         selector: str,
         key: str,
@@ -612,13 +590,6 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
             "frame_name": frame.name,
             "frame_url": frame.url,
             **snapshot,
-            "guidance": (
-                "Determine the current page type before acting. On a job-description page, "
-                "click the relevant Apply control before inspecting or filling form fields. "
-                "Ignore newsletter, search, sign-in, and job-alert forms. If this is an "
-                "application form, call browser_inspect_form_controls next; do not guess field "
-                "selectors from labels or form text."
-            ),
         }
         return json.dumps(result, ensure_ascii=False, indent=2)
 
@@ -913,5 +884,4 @@ def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
         browser_inspect_form_controls,
         browser_read_dom,
         browser_upload_file,
-        pause_interaction,
     ]

@@ -151,3 +151,107 @@ class CandidateProfile(BaseModel):
             f"Resume Text:\n{self.resume_text}\n"
             f"Summary:\n{self.summary}"
         )
+
+
+FieldKey = Literal[
+    # Identity
+    "first_name",
+    "last_name",
+    # Contact
+    "email",
+    "phone",
+    "address_line_1",
+    "address_line_2",
+    "city",
+    "state",
+    "postal_code",
+    "country",
+    # Application materials
+    "resume",
+    "cover_letter",
+    # Online profiles
+    "linkedin_url",
+    "github_url",
+    "portfolio_url",
+    "website_url",
+    # Work authorization
+    "authorized_to_work",
+    "requires_sponsorship",
+    "visa_status",
+    # Job preferences
+    "desired_salary",
+    "available_start_date",
+    "willing_to_relocate",
+    "referral_source",
+    # Voluntary demographic / EEO
+    "gender",
+    "hispanic_or_latino",
+    "race",
+    "disability_status",
+    "veteran_status",
+    # Consent
+    "privacy_consent",
+    "communications_consent",
+    "terms_acknowledgement",
+    # Long-tail fields
+    "custom_question",
+    "unknown",
+    # final options
+    "submit_button",
+]
+
+
+class FormOption(BaseModel):
+    label: str
+    value: str | None = None
+    selected: bool = False
+    disabled: bool = False
+
+
+class FormField(BaseModel):
+    # 内部稳定标识，不一定等于 DOM id
+    field_key: FieldKey | None = None
+
+    # DOM 身份信息
+    element_id: str | None = None
+    input_name: str | None = None
+    test_id: str | None = None
+
+    # 控件语义
+    tag: str
+    role: str | None = None
+    input_type: str | None = None
+    accessible_name: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    placeholder: str | None = None
+
+    # 控件数据
+    current_value: str | bool | list[str] | None = None
+    options: list[FormOption] = Field(default_factory=list)
+
+    # 控件状态
+    required: bool = False
+    visible: bool = True
+    enabled: bool = True
+    editable: bool = False
+    readonly: bool = False
+    checked: bool | None = None
+    multiple: bool = False
+
+    # 作用域与结构
+    form_id: str | None = None
+    group_key: str | None = None
+    group_label: str | None = None
+    component: Literal[
+        "standalone",
+        "phone_country",
+        "phone_number",
+        "date_month",
+        "date_day",
+        "date_year",
+        "other",
+    ] = "standalone"
+
+    # iframe 信息
+    frame_url: str | None = None
+    frame_name: str | None = None
