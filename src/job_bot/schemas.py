@@ -108,7 +108,7 @@ class EducationDegree(BaseModel):
     gpa: float
 
 
-FieldKey = Literal[
+JobFormFieldKey = Literal[
     # Identity
     "first_name",
     "last_name",
@@ -169,8 +169,6 @@ class CandidateProfile(BaseModel):
     state: str | None = None
     postal_code: str | None = None
     country: str | None = None
-    resume_file: bytes | None = None
-    cover_letter_file: bytes | None = None
 
     linkedin_url: str | None = None
     github_url: str | None = None
@@ -216,7 +214,7 @@ class CandidateProfile(BaseModel):
             f"Summary:\n{self.summary}"
         )
 
-    def get_answer(self, field_key: FieldKey) -> str | bool | None:
+    def get_answer(self, field_key: JobFormFieldKey) -> str | bool | None:
         """Get the answer for a given field key."""
         return getattr(self, field_key, None)
 
@@ -245,7 +243,7 @@ class FormOption(BaseModel):
 
 class FormField(BaseModel):
     # 内部稳定标识，不一定等于 DOM id
-    field_key: FieldKey | None = None
+    field_key: JobFormFieldKey | None = None
 
     interaction_kind: InteractionKind = "unknown"
 
