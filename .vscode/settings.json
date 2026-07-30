@@ -5,10 +5,10 @@
   "python.analysis.exclude": [
     "build/**",
     "**/*.egg-info/**",
-    "**/node_modules",
-    "**/__pycache__",
+    "**/node_modules/**",
+    "**/__pycache__/**",
     "**/.*",
-    ".venv"
+    "**/.venv/**"
   ],
   "python.analysis.extraPaths": ["${workspaceFolder}/src"],
   "python.testing.pytestEnabled": true,

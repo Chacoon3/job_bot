@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 from playwright.async_api import async_playwright
 
 from job_bot.adapter.greenhouse import ApplicationDraft, GreenhouseAdapter, Upload
+from job_bot.agent.planned_applier import inspect_page
 from job_bot.agent.react_applier import apply_for_job
 from job_bot.db.app_redis import AppRedisAsync
 from job_bot.llm import OpenAILLMProvider
@@ -12,6 +13,13 @@ from job_bot.utils.file_upload import extract_uploadable_file, parse_pure_text_p
 from job_bot.utils.resume_parser import ai_parse_resume
 
 router = APIRouter(prefix="/apiv2", tags=["job_bot"])
+
+
+@router.post("/inspect")
+async def inspect(request: Request) -> dict:
+    form = await request.form()
+    job_url = form.get("job_url")
+    return await inspect_page(job_url)
 
 
 @router.post("/adapter/greenhouse")

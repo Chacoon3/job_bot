@@ -8,9 +8,11 @@ from job_bot.api.api_v2 import router as routerv2
 from job_bot.api.greenhouse_api import router as greenhouse_router
 from job_bot.api.job import router
 from job_bot.logging import configure_logging
+from job_bot.middleware import register_middleware
 
 configure_logging()
 app = FastAPI(title="job_bot", version="0.1.0")
+register_middleware(app)
 app.include_router(router)
 app.include_router(greenhouse_router)
 app.include_router(routerv2)

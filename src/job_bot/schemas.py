@@ -109,16 +109,23 @@ class EducationDegree(BaseModel):
 
 
 class CandidateProfile(BaseModel):
-    name: str
+    first_name: str
+    last_name: str
     email: str
-    phone_area_code: str
+    phone_country_code: str
+    country: str
     phone: str
     linkedin_url: str | None = None
     github_url: str | None = None
     portfolio_url: str | None = None
     education: list[EducationDegree]
     resume_text: str
+    resume_file: bytes | None = None
     require_sponsorship: bool = True
+    disabled: bool = False
+    veteran: bool = False
+    is_hispanic_or_latino: bool = False
+    race: str = "Asian"
     summary: str
 
     def to_prompt_text(self) -> str:
@@ -132,9 +139,9 @@ class CandidateProfile(BaseModel):
             ]
         )
         return (
-            f"Name: {self.name}\n"
+            f"Name: {self.first_name}\n"
             f"Email: {self.email}\n"
-            f"Phone Area Code: {self.phone_area_code}\n"
+            f"Phone Country Code: {self.phone_country_code}\n"
             f"Phone: {self.phone}\n"
             f"LinkedIn: {self.linkedin_url}\n"
             f"GitHub: {self.github_url}\n"
