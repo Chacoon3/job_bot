@@ -9,12 +9,11 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.orm import Session
 from structlog.stdlib import get_logger
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
-from job_bot.db.job_models import JobEntry
+from job_bot.db.job_models import Job
 from job_bot.db.upsert import batched_upsert
 from job_bot.job_providers.greenhouse_job_provider import GREENHOUSE_SOURCE
 
@@ -163,8 +162,8 @@ class GreenhouseJobSyncService:
         posted_after: datetime,
         include_keywords: Sequence[str] = (),
         exclude_keywords: Sequence[str] = (),
-    ) -> tuple[list[JobEntry], int]:
-        jobs_by_url: dict[str, JobEntry] = {}
+    ) -> tuple[list[Job], int]:
+        jobs_by_url: dict[str, Job] = {}
         logger = get_logger(__name__)
         boards_failed = 0
         for board in boards:
@@ -202,12 +201,12 @@ class GreenhouseJobSyncService:
         return list(jobs_by_url.values()), boards_failed
 
     @staticmethod
-    def _is_recent(job: JobEntry, posted_after: datetime) -> bool:
+    def _is_recent(job: Job, posted_after: datetime) -> bool:
         return job.date_posted is not None and job.date_posted >= posted_after
 
     @staticmethod
     def _matches_keywords(
-        job: JobEntry,
+        job: Job,
         *,
         include_keywords: Sequence[str],
         exclude_keywords: Sequence[str],
@@ -226,36 +225,32 @@ class GreenhouseJobSyncService:
             return False
         return not included or any(keyword in title_text for keyword in included)
 
-    def _upsert_jobs(self, jobs: list[JobEntry]) -> int:
+    def _upsert_jobs(self, jobs: list[Job]) -> int:
         values = (
             {
                 "source": job.source,
                 "job_title": job.job_title,
                 "url": job.url,
-                "year_of_experience": job.year_of_experience,
                 "company_name": job.company_name,
                 "job_location": job.job_location,
                 "jd_summary": job.jd_summary,
-                "pay_range": job.pay_range,
                 "date_posted": job.date_posted,
             }
             for job in jobs
         )
         return batched_upsert(
             self.session,
-            JobEntry,
+            Job,
             values,
-            conflict_columns=[JobEntry.url],
+            conflict_columns=[Job.url],
             update_columns=[
-                JobEntry.source,
-                JobEntry.job_title,
-                JobEntry.year_of_experience,
-                JobEntry.company_name,
-                JobEntry.job_location,
-                JobEntry.jd_summary,
-                JobEntry.pay_range,
-                JobEntry.date_posted,
-                JobEntry.updated_at,
+                Job.source,
+                Job.job_title,
+                Job.company_name,
+                Job.job_location,
+                Job.jd_summary,
+                Job.date_posted,
+                Job.updated_at,
             ],
         )
 
@@ -263,7 +258,7 @@ class GreenhouseJobSyncService:
     def _to_job_entry_record(
         board: GreenhouseBoard,
         raw_job: Any,
-    ) -> JobEntry | None:
+    ) -> Job | None:
         if not isinstance(raw_job, dict):
             return None
         title = raw_job.get("title")
@@ -281,14 +276,12 @@ class GreenhouseJobSyncService:
             if isinstance(content, str)
             else ""
         )
-        return JobEntry(
+        return Job(
             source=GREENHOUSE_SOURCE,
             job_title=title.strip(),
             url=url.strip(),
-            year_of_experience=Range(0, 0, bounds="[]"),
             company_name=board.company_name or board.token,
             job_location=str(location_name).strip(),
             jd_summary=summary,
-            pay_range=Range(0, 0, bounds="[]"),
             date_posted=_parse_datetime(raw_job.get("updated_at")),
         )

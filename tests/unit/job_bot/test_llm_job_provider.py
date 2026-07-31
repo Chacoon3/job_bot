@@ -107,13 +107,9 @@ def _job(*, posted: datetime | None) -> JobEntrySchema:
     return JobEntrySchema(
         job_title="Software Engineer",
         url="/jobs/1",
-        year_of_experience_minimum=2,
-        year_of_experience_maximum=4,
         company_name="LLM supplied value",
         job_location="Remote",
         jd_summary="Build systems.",
-        pay_range_minimum=100_000,
-        pay_range_maximum=150_000,
         date_posted=posted,
     )
 

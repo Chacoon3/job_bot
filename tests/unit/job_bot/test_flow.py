@@ -73,13 +73,9 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
         job_title="Software Engineer",
         source="greenhouse",
         url="https://example.com/jobs/123",
-        year_of_experience_minimum=2,
-        year_of_experience_maximum=5,
         company_name="Example Corp",
         job_location="Remote",
         jd_summary="Build systems",
-        pay_range_minimum=120000,
-        pay_range_maximum=160000,
     )
     candidate = User(
         first_name="Alex",

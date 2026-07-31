@@ -15,13 +15,16 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 from playwright.async_api import Playwright
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
 from structlog import get_logger
 
 from job_bot.agent.filler import GreenHouseFiller
+from job_bot.db.database import create_database_engine, create_session_factory, session_scope
+from job_bot.db.job_models import Job, JobPageInspection
 from job_bot.openai_client import get_async_openai_client
 from job_bot.schemas import ApplicationFileSet, FormField, User
 from job_bot.utils.browser_tools import BrowserSession
-from job_bot.utils.caching import AppDiskCache
 from job_bot.utils.decorators import log_upon_exit
 from job_bot.utils.file_upload import UploadableFile
 from job_bot.utils.hash_helper import schema_string_key
@@ -29,6 +32,51 @@ from job_bot.utils.hash_helper import schema_string_key
 
 class PageInspection(BaseModel):
     form_fields: list[FormField] = Field(default_factory=list)
+
+
+@cache
+def _inspection_session_factory() -> sessionmaker[Session]:
+    return create_session_factory(create_database_engine())
+
+
+def _load_page_inspections(url: str, version: str) -> list[PageInspection]:
+    with session_scope(_inspection_session_factory()) as session:
+        records = session.scalars(
+            select(JobPageInspection)
+            .join(Job)
+            .where(Job.url == url, JobPageInspection.version == version)
+            .order_by(JobPageInspection.page_index)
+        ).all()
+        return [PageInspection.model_validate(record.inspection) for record in records]
+
+
+def _save_page_inspections(
+    url: str,
+    version: str,
+    inspections: list[PageInspection],
+) -> None:
+    with session_scope(_inspection_session_factory()) as session:
+        job = session.scalar(select(Job).where(Job.url == url))
+        if job is None:
+            job = Job(
+                job_title=url[:512],
+                url=url,
+                company_name="",
+                job_location="",
+                jd_summary="",
+            )
+            session.add(job)
+            session.flush()
+
+        session.add_all(
+            JobPageInspection(
+                job_id=job.job_id,
+                page_index=page_index,
+                version=version,
+                inspection=inspection.model_dump(mode="json"),
+            )
+            for page_index, inspection in enumerate(inspections)
+        )
 
 
 class _AgentState(BaseModel):
@@ -47,16 +95,17 @@ class _AgentContext(BaseModel):
     model: Runnable[LanguageModelInput, AIMessage] | None = None
 
 
-@AppDiskCache.cached(
-    key_builder=lambda _func, args, _kwargs: schema_string_key(
-        args[0] + os.environ.get("JOB_BOT_LLM_MODEL", ""), PageInspection
-    )
-)
-async def inspect_page(url: str) -> list[FormField]:
-    openai_client = get_async_openai_client()
+async def inspect_page(url: str) -> list[PageInspection]:
     model = os.getenv("JOB_BOT_LLM_MODEL")
     if not model:
         raise RuntimeError("Environment variable JOB_BOT_LLM_MODEL is not set.")
+
+    version = schema_string_key(url + model, PageInspection)
+    cached_inspections = await asyncio.to_thread(_load_page_inspections, url, version)
+    if cached_inspections:
+        return cached_inspections
+
+    openai_client = get_async_openai_client()
     response = await openai_client.responses.parse(
         model=model,
         input=[
@@ -84,7 +133,8 @@ async def inspect_page(url: str) -> list[FormField]:
                     "contenteditable, "
                     "date, "
                     "unknown"
-                    "If an interactive element is irrelevant to the application process, assign 'application-irrelevant' to its field_key."
+                    "If an interactive element is irrelevant to the application process, "
+                    "assign 'application-irrelevant' to its field_key."
                 ),
             },
             {
@@ -103,7 +153,9 @@ async def inspect_page(url: str) -> list[FormField]:
             f"Actual: {inspection}"
         )
 
-    return list(inspection.form_fields)
+    inspections = [inspection]
+    await asyncio.to_thread(_save_page_inspections, url, version, inspections)
+    return inspections
 
 
 def evaluate_inspection(state: _AgentState, context: _AgentContext) -> dict:
@@ -207,7 +259,7 @@ async def agent_flow(
         # ensure we start page operation at
         res = await asyncio.gather(inspect_page(url), page.goto(url, wait_until="domcontentloaded"))
         await asyncio.sleep(3)
-        fields = res[0]
+        fields = [field for inspection in res[0] for field in inspection.form_fields]
         filler = GreenHouseFiller(browser_session, user, file_set)
         await filler.apply(fields)
         await asyncio.sleep(10)  # Adjust the duration as needed

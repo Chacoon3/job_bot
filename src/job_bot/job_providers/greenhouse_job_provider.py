@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from job_bot.db.job_models import JobEntry
+from job_bot.db.job_models import Job
 from job_bot.job_providers.job_provider import JobProvider
 from job_bot.schemas import JobEntrySchema
 
@@ -20,11 +20,11 @@ class GreenHouseJobProvider(JobProvider):
     def provide(self) -> list[JobEntrySchema]:
         jobs = (
             self.session.execute(
-                select(JobEntry)
-                .where(JobEntry.source == GREENHOUSE_SOURCE)
+                select(Job)
+                .where(Job.source == GREENHOUSE_SOURCE)
                 .order_by(
-                    JobEntry.date_posted.desc().nullslast(),
-                    JobEntry.id.asc(),
+                    Job.date_posted.desc().nullslast(),
+                    Job.job_id.asc(),
                 )
             )
             .scalars()

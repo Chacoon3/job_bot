@@ -101,9 +101,7 @@ Fortune 500 companies. The title need not be an exact text match.
 <field_requirements>
 For every returned job:
 - Copy the canonical official posting URL.
-- Extract the stated experience range; do not invent one when absent.
 - Preserve the posting's location and summarize only material responsibilities and qualifications.
-- Extract the posting's numeric pay bounds into pay_range.
 - Use the posting's explicit date for date_posted, or null only when no date
   restriction was requested.
 </field_requirements>

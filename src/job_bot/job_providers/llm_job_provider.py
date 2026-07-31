@@ -205,9 +205,8 @@ class LLMJobProvider(JobProvider):
                         "Extract every actual job posting visible in the supplied career-page "
                         "HTML. Return no navigation, search, category, or talent-network links. "
                         "Use the supplied company name. Resolve relative URLs against the supplied "
-                        "final page URL. Summarize the job description briefly. Use 0 when a "
-                        "minimum/maximum experience or annual pay value is not stated. Preserve "
-                        "the posted date when present; otherwise use null. Set source to 'llm'."
+                        "final page URL. Summarize the job description briefly. Preserve the "
+                        "posted date when present; otherwise use null. Set source to 'llm'."
                     )
                 ),
                 HumanMessage(

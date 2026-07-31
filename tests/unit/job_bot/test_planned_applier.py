@@ -10,6 +10,7 @@ from job_bot.agent.planned_applier import (
     agent_flow,
     inspect_page,
 )
+from job_bot.utils.hash_helper import schema_string_key
 
 
 def _form_field() -> FormField:
@@ -30,8 +31,9 @@ def _form_field() -> FormField:
     )
 
 
-def test_inspect_page_extracts_form_fields_into_state_update(monkeypatch) -> None:
+def test_inspect_page_generates_and_saves_versioned_inspection(monkeypatch) -> None:
     field = _form_field()
+    saved: dict[str, object] = {}
     client = Mock()
     client.responses.parse = AsyncMock(
         return_value=SimpleNamespace(output_parsed=PageInspection(form_fields=[field]))
@@ -41,17 +43,48 @@ def test_inspect_page_extracts_form_fields_into_state_update(monkeypatch) -> Non
         lambda: client,
     )
     monkeypatch.setenv("JOB_BOT_LLM_MODEL", "test-model")
+    monkeypatch.setattr("job_bot.agent.planned_applier._load_page_inspections", lambda *_: [])
+    monkeypatch.setattr(
+        "job_bot.agent.planned_applier._save_page_inspections",
+        lambda url, version, inspections: saved.update(
+            url=url, version=version, inspections=inspections
+        ),
+    )
     url = "https://example.com/apply?test=extract"
 
-    fields = asyncio.run(inspect_page.__wrapped__(url))
+    inspections = asyncio.run(inspect_page(url))
 
-    assert fields == [field]
+    assert inspections == [PageInspection(form_fields=[field])]
+    assert saved == {
+        "url": url,
+        "version": schema_string_key(url + "test-model", PageInspection),
+        "inspections": inspections,
+    }
     client.responses.parse.assert_called_once()
     request = client.responses.parse.call_args.kwargs
     assert request["model"] == "test-model"
     assert request["tools"] == [{"type": "web_search"}]
     assert request["text_format"] is PageInspection
     assert url in request["input"][1]["content"]
+
+
+def test_inspect_page_returns_matching_database_inspections(monkeypatch) -> None:
+    url = "https://example.com/apply?test=cached"
+    cached = [PageInspection(form_fields=[_form_field()])]
+    load = Mock(return_value=cached)
+    save = Mock()
+    client_factory = Mock()
+    monkeypatch.setenv("JOB_BOT_LLM_MODEL", "test-model")
+    monkeypatch.setattr("job_bot.agent.planned_applier._load_page_inspections", load)
+    monkeypatch.setattr("job_bot.agent.planned_applier._save_page_inspections", save)
+    monkeypatch.setattr("job_bot.agent.planned_applier.get_async_openai_client", client_factory)
+
+    result = asyncio.run(inspect_page(url))
+
+    assert result == cached
+    load.assert_called_once_with(url, schema_string_key(url + "test-model", PageInspection))
+    save.assert_not_called()
+    client_factory.assert_not_called()
 
 
 def test_inspect_page_rejects_unparsed_response(monkeypatch) -> None:
@@ -62,9 +95,10 @@ def test_inspect_page_rejects_unparsed_response(monkeypatch) -> None:
         lambda: client,
     )
     monkeypatch.setenv("JOB_BOT_LLM_MODEL", "test-model")
+    monkeypatch.setattr("job_bot.agent.planned_applier._load_page_inspections", lambda *_: [])
 
     with pytest.raises(RuntimeError, match="Unexpected page inspection response type"):
-        asyncio.run(inspect_page.__wrapped__("https://example.com/apply?test=unparsed"))
+        asyncio.run(inspect_page("https://example.com/apply?test=unparsed"))
 
 
 def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
@@ -91,7 +125,7 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
         def page(self):
             return page
 
-    inspect = AsyncMock(return_value=[field])
+    inspect = AsyncMock(return_value=[PageInspection(form_fields=[field])])
     filler_factory = Mock(return_value=filler)
     monkeypatch.setattr("job_bot.agent.planned_applier.BrowserSession", FakeBrowserSession)
     monkeypatch.setattr("job_bot.agent.planned_applier.inspect_page", inspect)

@@ -15,7 +15,7 @@ from job_bot.applier.flow import (
     find_jobs,
 )
 from job_bot.db.app_redis import AppRedisAsync
-from job_bot.db.job_models import JobEntry
+from job_bot.db.job_models import Job
 from job_bot.db.upsert import batched_upsert
 from job_bot.job_providers.llm_job_provider import LLMJobProvider
 from job_bot.llm import OpenAILLMProvider
@@ -55,32 +55,28 @@ def load_jobs(
     records = [job.to_orm_model() for job in jobs]
     batched_upsert(
         session,
-        JobEntry,
+        Job,
         (
             {
                 "source": record.source,
                 "job_title": record.job_title,
                 "url": record.url,
-                "year_of_experience": record.year_of_experience,
                 "company_name": record.company_name,
                 "job_location": record.job_location,
                 "jd_summary": record.jd_summary,
-                "pay_range": record.pay_range,
                 "date_posted": record.date_posted,
             }
             for record in records
         ),
-        conflict_columns=[JobEntry.url],
+        conflict_columns=[Job.url],
         update_columns=[
-            JobEntry.source,
-            JobEntry.job_title,
-            JobEntry.year_of_experience,
-            JobEntry.company_name,
-            JobEntry.job_location,
-            JobEntry.jd_summary,
-            JobEntry.pay_range,
-            JobEntry.date_posted,
-            JobEntry.updated_at,
+            Job.source,
+            Job.job_title,
+            Job.company_name,
+            Job.job_location,
+            Job.jd_summary,
+            Job.date_posted,
+            Job.updated_at,
         ],
     )
     session.commit()

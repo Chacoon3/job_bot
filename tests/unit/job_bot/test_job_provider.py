@@ -4,25 +4,21 @@ from datetime import UTC, datetime
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy.dialects.postgresql import Range
 
-from job_bot.db.job_models import JobEntry
+from job_bot.db.job_models import Job
 from job_bot.job_providers.greenhouse_job_provider import GreenHouseJobProvider
 from job_bot.job_providers.job_provider import JobProvider
 from job_bot.schemas import JobEntrySchema
 
 
-def _record() -> JobEntry:
-    return JobEntry(
-        id=1,
+def _record() -> Job:
+    return Job(
         source="greenhouse",
         job_title="Software Engineer",
         url="https://job-boards.greenhouse.io/example/jobs/123",
-        year_of_experience=Range(0, 1, bounds="[)"),
         company_name="Example Corp",
         job_location="Remote",
         jd_summary="Build reliable systems.",
-        pay_range=Range(0, 1, bounds="[)"),
         date_posted=datetime(2026, 7, 24, 12, 30, tzinfo=UTC),
     )
 
@@ -42,9 +38,5 @@ def test_greenhouse_provider_queries_persisted_greenhouse_jobs() -> None:
     assert isinstance(jobs[0], JobEntrySchema)
     assert jobs[0].job_title == "Software Engineer"
     assert jobs[0].company_name == "Example Corp"
-    assert jobs[0].year_of_experience_minimum == 0
-    assert jobs[0].year_of_experience_maximum == 1
-    assert jobs[0].pay_range_minimum == 0
-    assert jobs[0].pay_range_maximum == 1
     statement = session.execute.call_args.args[0]
-    assert "job_entries.source =" in str(statement)
+    assert "jobs.source =" in str(statement)

@@ -2,36 +2,28 @@ from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy.dialects.postgresql import Range
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
-from job_bot.db.job_models import JobEntry
+from job_bot.db.job_models import Job
 from job_bot.schemas import GreenhouseBoardSchema, JobEntrySchema, User
 
 
-def test_job_entry_schema_round_trips_orm_ranges() -> None:
-    orm_job = JobEntry(
-        id=1,
+def test_job_entry_schema_round_trips_job() -> None:
+    orm_job = Job(
         source="greenhouse",
         job_title="Software Engineer",
         url="https://example.com/jobs/123",
-        year_of_experience=Range(2, 5, bounds="[]"),
         company_name="Example Corp",
         job_location="Remote",
         jd_summary="Build systems",
-        pay_range=Range(120_000, 160_000, bounds="[]"),
         date_posted=datetime(2026, 7, 25, tzinfo=UTC),
     )
 
     schema = JobEntrySchema.from_orm_model(orm_job)
     restored = schema.to_orm_model()
 
-    assert schema.year_of_experience_minimum == 2
-    assert schema.year_of_experience_maximum == 5
-    assert schema.pay_range_minimum == 120_000
-    assert schema.pay_range_maximum == 160_000
-    assert restored.year_of_experience == Range(2, 5, bounds="[]")
-    assert restored.pay_range == Range(120_000, 160_000, bounds="[]")
+    assert restored.job_title == "Software Engineer"
+    assert restored.url == "https://example.com/jobs/123"
 
 
 def test_greenhouse_board_schema_reads_orm_attributes() -> None:

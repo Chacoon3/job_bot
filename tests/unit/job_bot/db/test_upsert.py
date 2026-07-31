@@ -2,7 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from job_bot.db.job_models import JobEntry
+from job_bot.db.job_models import Job
 from job_bot.db.upsert import _resolve_upsert_metadata, batched_upsert
 
 
@@ -19,10 +19,10 @@ def test_batched_upsert_executes_batches_and_returns_row_count() -> None:
 
     rows_processed = batched_upsert(
         session,
-        JobEntry,
+        Job,
         (_row(index) for index in range(5)),
-        conflict_columns=[JobEntry.url],
-        update_columns=[JobEntry.source, JobEntry.job_title],
+        conflict_columns=[Job.url],
+        update_columns=[Job.source, Job.job_title],
         batch_size=2,
     )
 
@@ -37,7 +37,7 @@ def test_batched_upsert_obeys_bind_parameter_limit() -> None:
 
     batched_upsert(
         session,
-        JobEntry,
+        Job,
         [_row(1), _row(2)],
         conflict_columns=["url"],
         update_columns=["job_title"],
@@ -54,7 +54,7 @@ def test_batched_upsert_rejects_inconsistent_rows() -> None:
     with pytest.raises(ValueError, match="same columns"):
         batched_upsert(
             session,
-            JobEntry,
+            Job,
             [_row(1), {"source": "greenhouse", "url": "https://example.com/jobs/2"}],
             conflict_columns=["url"],
             update_columns=["job_title"],
@@ -68,10 +68,10 @@ def test_batched_upsert_caches_resolved_model_metadata() -> None:
     for index in range(2):
         batched_upsert(
             session,
-            JobEntry,
+            Job,
             [_row(index)],
-            conflict_columns=[JobEntry.url],
-            update_columns=[JobEntry.job_title],
+            conflict_columns=[Job.url],
+            update_columns=[Job.job_title],
         )
 
     cache_info = _resolve_upsert_metadata.cache_info()

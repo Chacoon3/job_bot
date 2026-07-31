@@ -19,13 +19,9 @@ def _sample_job() -> JobEntrySchema:
         source="untrusted-source",
         job_title="Software Engineer",
         url="https://careers.example.com/jobs/123",
-        year_of_experience_minimum=2,
-        year_of_experience_maximum=4,
         company_name="Example",
         job_location="Remote",
         jd_summary="Build reliable systems.",
-        pay_range_minimum=120_000,
-        pay_range_maximum=160_000,
         date_posted=datetime(2026, 7, 25, tzinfo=UTC),
     )
 
@@ -66,12 +62,12 @@ def test_load_jobs_converts_upserts_and_commits(monkeypatch) -> None:
 
     assert result[0].source == "llm"
     assert captured["session"] is session
-    assert captured["model"] is job.JobEntry
+    assert captured["model"] is job.Job
     rows = captured["rows"]
     assert len(rows) == 1  # type: ignore[arg-type]
     assert rows[0]["source"] == "llm"  # type: ignore[index]
     assert rows[0]["url"] == "https://careers.example.com/jobs/123"  # type: ignore[index]
     assert "id" not in rows[0]  # type: ignore[operator]
     kwargs = captured["upsert_kwargs"]
-    assert kwargs["conflict_columns"] == [job.JobEntry.url]  # type: ignore[index]
+    assert kwargs["conflict_columns"] == [job.Job.url]  # type: ignore[index]
     assert session.committed is True

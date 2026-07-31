@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import httpx
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
-from job_bot.db.job_models import JobEntry
+from job_bot.db.job_models import Job
 from job_bot.greenhouse.jobs import (
     GreenhouseBoardSyncPolicy,
     GreenhouseJobSyncService,
@@ -139,7 +139,7 @@ def test_sync_filters_old_undated_and_keyword_mismatched_jobs() -> None:
 
 
 def test_keyword_filter_matches_any_include_and_prioritizes_exclusions() -> None:
-    job = JobEntry(
+    job = Job(
         source=GREENHOUSE_SOURCE,
         job_title="Senior Python Engineer",
         url="https://example.com/jobs/1",
@@ -161,7 +161,7 @@ def test_keyword_filter_matches_any_include_and_prioritizes_exclusions() -> None
 
 
 def test_positive_keywords_only_match_job_title() -> None:
-    job = JobEntry(
+    job = Job(
         source=GREENHOUSE_SOURCE,
         job_title="Product Manager",
         url="https://example.com/jobs/2",
@@ -188,7 +188,7 @@ def test_upsert_jobs_batches_large_syncs() -> None:
     session = Mock()
     batch_size = 5_000
     jobs = [
-        JobEntry(
+        Job(
             source=GREENHOUSE_SOURCE,
             job_title=f"Engineer {index}",
             url=f"https://example.com/jobs/{index}",
@@ -204,7 +204,9 @@ def test_upsert_jobs_batches_large_syncs() -> None:
     assert jobs_stored == len(jobs)
     assert session.execute.call_count == 2
     batch_sizes = [
-        len(call.args[0].compile().params) // 9 for call in session.execute.call_args_list
+        # The seven explicit values plus Job.job_id's generated UUID bind.
+        len(call.args[0].compile().params) // 8
+        for call in session.execute.call_args_list
     ]
     assert batch_sizes == [batch_size, 1]
 
