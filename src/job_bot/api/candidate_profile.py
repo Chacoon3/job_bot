@@ -66,6 +66,16 @@ class CandidateProfileSupplement(BaseModel):
     veteran_status: VeteranStatusOption = "decline"
 
 
+def _merge_resume_profile_with_supplement(
+    resume_profile: CandidateProfile,
+    supplement: CandidateProfileSupplement,
+) -> CandidateProfile:
+    """Ensure candidate-entered values always replace resume-derived values."""
+    supplement_values = supplement.model_dump(exclude_none=True)
+    resume_values = resume_profile.model_dump(exclude=set(supplement_values))
+    return CandidateProfile.model_validate({**resume_values, **supplement_values})
+
+
 def _supplement_from_form(
     authorized_to_work: Annotated[YesNoOption, Form()],
     requires_sponsorship: Annotated[YesNoOption, Form()],
@@ -174,12 +184,7 @@ async def _extract_candidate_profile(
                 f"(received {type(parsed).__name__})."
             )
 
-        return CandidateProfile.model_validate(
-            {
-                **parsed.model_dump(),
-                **profile_supplement.model_dump(exclude_none=True),
-            }
-        )
+        return _merge_resume_profile_with_supplement(parsed, profile_supplement)
     finally:
         await client.files.delete(uploaded_file.id)
 

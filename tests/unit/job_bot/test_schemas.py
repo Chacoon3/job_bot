@@ -93,3 +93,32 @@ def test_candidate_profile_rejects_noncanonical_dropdown_option() -> None:
             resume_text="Software engineer",
             summary="Backend engineer",
         )
+
+
+def test_candidate_profile_validates_and_normalizes_email() -> None:
+    profile = CandidateProfile(
+        first_name="Alex",
+        last_name="Doe",
+        email="  Alex.Doe@EXAMPLE.COM ",
+        phone_country="+1",
+        phone="555-0100",
+        education=[],
+        resume_text="Software engineer",
+        summary="Backend engineer",
+    )
+
+    assert profile.email == "alex.doe@example.com"
+
+
+def test_candidate_profile_rejects_invalid_email() -> None:
+    with pytest.raises(ValidationError):
+        CandidateProfile(
+            first_name="Alex",
+            last_name="Doe",
+            email="not-an-email",
+            phone_country="+1",
+            phone="555-0100",
+            education=[],
+            resume_text="Software engineer",
+            summary="Backend engineer",
+        )

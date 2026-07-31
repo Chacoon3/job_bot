@@ -30,3 +30,8 @@ def test_candidate_profile_table_stores_explicit_versioned_fields() -> None:
     assert "CONSTRAINT ck_candidate_profiles_version_positive CHECK (version > 0)" in ddl
     assert "CONSTRAINT uq_candidate_profiles_candidate_version UNIQUE" in ddl
     assert any("(candidate_id, version)" in statement for statement in index_ddl)
+    assert (
+        "CREATE INDEX idx_candidate_profiles_email_latest_active "
+        "ON candidate_profiles (email, created_at DESC, id DESC) "
+        "WHERE deleted_at IS NULL"
+    ) in index_ddl

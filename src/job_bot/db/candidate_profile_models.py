@@ -124,3 +124,12 @@ class CandidateProfileRecord(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+Index(
+    "idx_candidate_profiles_email_latest_active",
+    CandidateProfileRecord.email,
+    CandidateProfileRecord.created_at.desc(),
+    CandidateProfileRecord.id.desc(),
+    postgresql_where=CandidateProfileRecord.deleted_at.is_(None),
+)

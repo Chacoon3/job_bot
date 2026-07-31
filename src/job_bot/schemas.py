@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy.dialects.postgresql import Range
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
@@ -180,7 +180,7 @@ RaceEthnicityOption = Literal[
 class CandidateProfile(BaseModel):
     first_name: str
     last_name: str
-    email: str
+    email: EmailStr
     phone_country: str
     phone: str
     address_line_1: str | None = None
@@ -209,6 +209,12 @@ class CandidateProfile(BaseModel):
     education: list[EducationDegree]
     resume_text: str
     summary: str
+
+    @field_validator("email", mode="after")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        """Store a canonical, case-insensitive email identity."""
+        return str(value).casefold()
 
     def to_prompt_text(self) -> str:
         """Convert the candidate profile to a prompt text for LLMs."""

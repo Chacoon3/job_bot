@@ -88,7 +88,7 @@ def test_extract_candidate_profile_uploads_resume_and_parses_structured_output(
     client.files.create.assert_awaited_once_with(
         file=("resume.pdf", b"resume bytes"),
         purpose="user_data",
-        expires_after={"anchor": "created_at", "seconds": 1800},
+        expires_after={"anchor": "created_at", "seconds": 3600},
     )
     request = client.responses.parse.await_args.kwargs
     assert request["model"] == "test-model"
