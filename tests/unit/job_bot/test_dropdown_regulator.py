@@ -4,13 +4,16 @@ from typing import get_args
 import pytest
 
 from job_bot.agent.dropdown_regulator import (
+    get_dropdown_regulator_by_field_key,
     match_disability_option,
     match_disability_status_option,
     match_gender_option,
     match_race_ethnicity_option,
+    match_regulated_option,
     match_veteran_option,
     match_veteran_status_option,
     match_yes_no_option,
+    regulate_phone_country_code,
 )
 from job_bot.schemas import (
     DisabilityOption,
@@ -90,3 +93,59 @@ def test_status_qualified_matcher_aliases() -> None:
 
     assert match_veteran_status_option([veteran], "yes") is veteran
     assert match_disability_status_option([disability], "no") is disability
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "+1",
+        "US (+1)",
+        "U.S. +1",
+        "United States +1",
+        "United States of America (+1)",
+    ],
+)
+def test_phone_country_regulator_matches_us_calling_code_labels(label: str) -> None:
+    assert regulate_phone_country_code(label) == "phone_country:1"
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["+44", "UK (+44)", "U.K. +44", "GB +44", "United Kingdom (+44)"],
+)
+def test_phone_country_regulator_matches_uk_calling_code_labels(label: str) -> None:
+    assert regulate_phone_country_code(label) == "phone_country:44"
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("US", "phone_country:1"),
+        ("United States", "phone_country:1"),
+        ("UK", "phone_country:44"),
+        ("United Kingdom", "phone_country:44"),
+        ("Unknown country", "raw:unknown country"),
+    ],
+)
+def test_phone_country_regulator_handles_country_only_labels(
+    label: str,
+    expected: str,
+) -> None:
+    assert regulate_phone_country_code(label) == expected
+
+
+def test_phone_country_field_uses_phone_country_regulator() -> None:
+    assert get_dropdown_regulator_by_field_key("phone_country") is regulate_phone_country_code
+
+
+def test_phone_country_regulator_matches_code_to_abbreviated_dropdown_label() -> None:
+    expected = Option("US (+1)")
+
+    assert (
+        match_regulated_option(
+            [Option("UK (+44)"), expected],
+            "+1",
+            regulate_phone_country_code,
+        )
+        is expected
+    )

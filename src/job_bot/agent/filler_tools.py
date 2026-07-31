@@ -219,35 +219,51 @@ async def select_dropdown_option(
     if not snapshot.options:
         raise OptionNotFoundError("Dropdown has no options")
 
-    option_map: dict[str, str] = {
-        regulator(o.label) if regulator else o.label: o for o in snapshot.options
-    }
-    matches = [option_map.get(regulator(option_label) if regulator else option_label)]
+    normalize = regulator or (lambda value: value)
+    normalized_target = normalize(option_label)
+
+    matches = [
+        option for option in snapshot.options if normalize(option.label) == normalized_target
+    ]
 
     if not matches:
-        raise OptionNotFoundError(f"No matching option found for label {option_label!r}")
+        available = [option.label for option in snapshot.options]
+        raise OptionNotFoundError(
+            f"No matching option found for {option_label!r}; " f"available options: {available}"
+        )
 
     if len(matches) > 1:
         raise AmbiguousOptionError(
-            f"Multiple matching options found for label {option_label!r}: {matches}"
+            f"Multiple options match {option_label!r}: " f"{[option.label for option in matches]}"
         )
 
     match = matches[0]
 
     if match.disabled:
-        raise ValueError(f"Matching option is disabled: {match}")
-
-    # Use the element ID if available, otherwise use the index.
-    selector = (
-        f"#{match.element_id}"
-        if match.element_id
-        else f'[role="option"]:nth-child({match.index + 1})'
-    )
+        raise ValueError(f"Matching option is disabled: {match.label!r}")
 
     listbox_locator = page.locator(f'[role="listbox"][id={json.dumps(snapshot.listbox_id)}]')
 
     await expect(listbox_locator).to_be_visible(timeout=timeout)
 
-    option_locator = listbox_locator.locator(selector)
+    if match.element_id:
+        # Attribute selector avoids having to CSS-escape the ID.
+        option_locator = listbox_locator.locator(
+            f'[role="option"][id={json.dumps(match.element_id)}]'
+        )
+    else:
+        # nth() counts only elements with role="option", unlike :nth-child().
+        option_locator = listbox_locator.get_by_role("option").nth(match.index)
 
     await expect(option_locator).to_be_visible(timeout=timeout)
+    await expect(option_locator).to_be_enabled(timeout=timeout)
+
+    await option_locator.click(timeout=timeout)
+
+    # React Select normally closes the listbox after selection.
+    await expect(listbox_locator).to_be_hidden(timeout=timeout)
+    await expect(dropdown).to_have_attribute(
+        "aria-expanded",
+        "false",
+        timeout=timeout,
+    )

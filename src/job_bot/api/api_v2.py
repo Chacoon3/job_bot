@@ -18,7 +18,7 @@ from job_bot.utils.resume_parser import ai_parse_resume
 router = APIRouter(prefix="/apiv2", tags=["job_bot"])
 
 
-@router.post("/inspect")
+@router.post("/apply")
 async def inspect(
     request: Request,
     session: Annotated[Session, Depends(get_session)],

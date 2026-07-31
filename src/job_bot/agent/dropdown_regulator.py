@@ -18,6 +18,7 @@ from job_bot.schemas import (
     DisabilityOption,
     DisabilityStatusOption,
     GenderOption,
+    JobFormFieldKey,
     RaceEthnicityOption,
     VeteranOption,
     VeteranStatusOption,
@@ -255,12 +256,48 @@ def regulate_race_ethnicity(label: str) -> str:
     return _regulate(label, _RACE_RULES)
 
 
+_PHONE_COUNTRY_ALIASES: Mapping[str, str] = {
+    "gb": "+44",
+    "gbr": "+44",
+    "greatbritain": "+44",
+    "uk": "+44",
+    "unitedkingdom": "+44",
+    "us": "+1",
+    "usa": "+1",
+    "unitedstates": "+1",
+    "unitedstatesofamerica": "+1",
+}
+
+
+def regulate_phone_country_code(label: str) -> str:
+    """Canonicalize a phone calling code with an optional country label.
+
+    Phone dropdowns commonly render the same value as ``+1``, ``US (+1)``,
+    or ``United States +1``. Calling codes are at most three digits, so an
+    explicitly displayed code is a stable key regardless of the country-name
+    presentation. Country-only aliases are deliberately limited to common
+    U.S. and U.K. variants; unknown country names are not guessed.
+    """
+    display_label = unicodedata.normalize("NFKC", label).casefold()
+    calling_code_match = re.search(r"\+\s*(\d{1,3})(?!\d)", display_label)
+    if calling_code_match:
+        return f"phone_country:{calling_code_match.group(1)}"
+
+    normalized = normalize_dropdown_label(label)
+    compact_name = normalized.replace(" ", "")
+    if calling_code := _PHONE_COUNTRY_ALIASES.get(compact_name):
+        return f"phone_country:{calling_code.removeprefix('+')}"
+
+    return f"raw:{normalized}"
+
+
 COMMON_DROPDOWN_REGULATORS: Mapping[str, Regulator] = {
     "yes_no": regulate_yes_no,
     "veteran": regulate_veteran_status,
     "gender": regulate_gender,
     "race_ethnicity": regulate_race_ethnicity,
     "disability": regulate_disability_status,
+    "phone_country": regulate_phone_country_code,
 }
 
 
@@ -393,3 +430,30 @@ def match_race_ethnicity_option(
         "race",
         regulate_race_ethnicity,
     )
+
+
+def get_dropdown_regulator_by_field_key(field_key: JobFormFieldKey) -> Callable[[str], str] | None:
+    """Return a regulator function for a given field key, if applicable."""
+    if field_key == "phone_country":
+        return regulate_phone_country_code
+    elif field_key == "willing_to_relocate":
+        return regulate_yes_no
+    elif field_key == "veteran_status":
+        return regulate_veteran_status
+    elif field_key == "disability_status":
+        return regulate_disability_status
+    elif field_key == "gender":
+        return regulate_gender
+    elif field_key == "race":
+        return regulate_race_ethnicity
+    elif field_key in (
+        "authorized_to_work",
+        "requires_sponsorship",
+        "is_hispanic_or_latino",
+        "privacy_consent",
+        "communications_consent",
+        "terms_acknowledgement",
+    ):
+        return regulate_yes_no
+    else:
+        return None

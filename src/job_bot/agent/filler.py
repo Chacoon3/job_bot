@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from playwright.async_api import expect
 from structlog import get_logger
 
+from job_bot.agent.dropdown_regulator import get_dropdown_regulator_by_field_key
 from job_bot.agent.filler_tools import (
     fill_text_field,
     locate_by_accessible_name,
@@ -92,7 +93,7 @@ class GreenHouseFiller(BaseFiller):
             self.browser_session.page(),
             dropdown_locator,
             dropdown_answer,
-            regulator=None,
+            regulator=get_dropdown_regulator_by_field_key(field.field_key),
         )
 
     async def checkbox(self, field: FormField, value: bool) -> None:
