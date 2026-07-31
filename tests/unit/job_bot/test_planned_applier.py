@@ -6,7 +6,7 @@ import pytest
 
 from job_bot.agent.planned_applier import (
     FormField,
-    _PageInspection,
+    PageInspection,
     agent_flow,
     inspect_page,
 )
@@ -34,7 +34,7 @@ def test_inspect_page_extracts_form_fields_into_state_update(monkeypatch) -> Non
     field = _form_field()
     client = Mock()
     client.responses.parse = AsyncMock(
-        return_value=SimpleNamespace(output_parsed=_PageInspection(form_fields=[field]))
+        return_value=SimpleNamespace(output_parsed=PageInspection(form_fields=[field]))
     )
     monkeypatch.setattr(
         "job_bot.agent.planned_applier.get_async_openai_client",
@@ -50,7 +50,7 @@ def test_inspect_page_extracts_form_fields_into_state_update(monkeypatch) -> Non
     request = client.responses.parse.call_args.kwargs
     assert request["model"] == "test-model"
     assert request["tools"] == [{"type": "web_search"}]
-    assert request["text_format"] is _PageInspection
+    assert request["text_format"] is PageInspection
     assert url in request["input"][1]["content"]
 
 
@@ -71,8 +71,9 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
     field = _form_field()
     navigation_response = object()
     page = SimpleNamespace(goto=AsyncMock(return_value=navigation_response))
-    filler = SimpleNamespace(fill_fields=AsyncMock())
+    filler = SimpleNamespace(apply=AsyncMock())
     user = SimpleNamespace()
+    file_set = SimpleNamespace()
     browser_sessions = []
 
     class FakeBrowserSession:
@@ -98,11 +99,11 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
     monkeypatch.setattr("job_bot.agent.planned_applier.asyncio.sleep", AsyncMock())
 
     playwright = SimpleNamespace()
-    asyncio.run(agent_flow("https://example.com/apply", playwright, user))
+    asyncio.run(agent_flow("https://example.com/apply", playwright, user, file_set))
 
     page.goto.assert_awaited_once_with(
         "https://example.com/apply",
         wait_until="domcontentloaded",
     )
-    filler_factory.assert_called_once_with(browser_sessions[0], user)
-    filler.fill_fields.assert_awaited_once_with([field])
+    filler_factory.assert_called_once_with(browser_sessions[0], user, file_set)
+    filler.apply.assert_awaited_once_with([field])

@@ -29,7 +29,7 @@ def test_greenhouse_filler_uses_the_active_page(monkeypatch) -> None:
         Mock(return_value=visible_assertion),
     )
 
-    asyncio.run(GreenHouseFiller(browser_session, Mock()).text(field, "Zizheng"))
+    asyncio.run(GreenHouseFiller(browser_session, Mock()).fill(field, "Zizheng"))
 
     browser_session.page.assert_called_once_with()
     locate.assert_called_once_with(page, "First Name", None)

@@ -16,7 +16,12 @@ from job_bot.utils.browser_tools import BrowserSession
 
 
 class BaseApplier(ABC):
-    def __init__(self, browser_session: BrowserSession, user: User, file_set: ApplicationFileSet):
+    def __init__(
+        self,
+        browser_session: BrowserSession,
+        user: User,
+        file_set: ApplicationFileSet | None = None,
+    ) -> None:
         self.browser_session = browser_session
         self.user = user
         self.file_set = file_set

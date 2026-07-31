@@ -3,7 +3,6 @@ import io
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-import pytest
 from starlette.datastructures import FormData, Headers, UploadFile
 
 from job_bot.utils.file_upload import extract_uploadable_file, parse_pure_text_pdf
@@ -64,8 +63,9 @@ def test_extract_uploadable_file_uses_default_mime_type() -> None:
     assert result.mime_type == "application/octet-stream"
 
 
-def test_extract_uploadable_file_rejects_non_file_form_field() -> None:
+def test_extract_uploadable_file_ignores_non_file_form_field() -> None:
     request = FakeRequest(FormData([("file", "not-a-file")]))
 
-    with pytest.raises(ValueError, match="must contain an uploaded file"):
-        asyncio.run(extract_uploadable_file(request))
+    result = asyncio.run(extract_uploadable_file(request))
+
+    assert result is None
