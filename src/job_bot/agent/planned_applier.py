@@ -27,7 +27,7 @@ from job_bot.utils.file_upload import UploadableFile
 from job_bot.utils.hash_helper import schema_string_key
 
 
-class _PageInspection(BaseModel):
+class PageInspection(BaseModel):
     form_fields: list[FormField] = Field(default_factory=list)
 
 
@@ -49,7 +49,7 @@ class _AgentContext(BaseModel):
 
 @AppDiskCache.cached(
     key_builder=lambda _func, args, _kwargs: schema_string_key(
-        args[0] + os.environ.get("JOB_BOT_LLM_MODEL", ""), _PageInspection
+        args[0] + os.environ.get("JOB_BOT_LLM_MODEL", ""), PageInspection
     )
 )
 async def inspect_page(url: str) -> list[FormField]:
@@ -93,11 +93,11 @@ async def inspect_page(url: str) -> list[FormField]:
             },
         ],
         tools=[{"type": "web_search"}],
-        text_format=_PageInspection,
+        text_format=PageInspection,
     )
 
     inspection = response.output_parsed
-    if not isinstance(inspection, _PageInspection):
+    if not isinstance(inspection, PageInspection):
         raise RuntimeError(
             f"Unexpected page inspection response type: {type(inspection)}. "
             f"Actual: {inspection}"
@@ -209,7 +209,7 @@ async def agent_flow(
         await asyncio.sleep(3)
         fields = res[0]
         filler = GreenHouseFiller(browser_session, user, file_set)
-        await filler.fill_fields(fields)
+        await filler.apply(fields)
         await asyncio.sleep(10)  # Adjust the duration as needed
 
 

@@ -277,17 +277,25 @@ class UserResponse(BaseModel):
     updated_at: datetime
 
 
-InteractionKind = Literal[
-    "text",
+InteractionStrategy = Literal[
+    "fill",
+    "select_native",
+    "select_combobox",
+    "select_radio",
+    "toggle_checkbox",
+    "upload_file",
+    "click",
+    "fill_contenteditable",
+    "pick_date",
+    "unsupported",
+]
+
+ControlKind = Literal[
+    "input",
     "textarea",
     "select",
-    "autocomplete",
-    "radio",
-    "checkbox",
-    "file_upload",
     "button",
     "contenteditable",
-    "date",
     "unknown",
 ]
 
@@ -303,7 +311,9 @@ class FormField(BaseModel):
     # 内部稳定标识，不一定等于 DOM id
     field_key: JobFormFieldKey | None = None
 
-    interaction_kind: InteractionKind = "unknown"
+    interaction_strategy: InteractionStrategy = "unsupported"
+
+    control_kind: ControlKind = "unknown"
 
     # DOM 身份信息
     element_id: str | None = None
