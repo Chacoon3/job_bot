@@ -51,7 +51,7 @@ class BaseFiller(ABC):
                 get_logger().info(
                     "Field filled successfully",
                     field_name=field.accessible_name,
-                    field_value=answer[:5],
+                    field_value=str(answer)[:5],
                 )
             except Exception as e:
                 get_logger().error(
@@ -79,20 +79,16 @@ class GreenHouseFiller(BaseFiller):
             field.role,
         )
 
-        dropdown_answer = self.user.get_answer(field.field_key)
-        if dropdown_answer is None:
-            raise ValueError(f"No answer found for field key: {field.field_key}")
-
         get_logger().info(
             "Filling dropdown field",
             field_name=field.accessible_name,
-            field_value=dropdown_answer,
+            field_value=value,
         )
 
         await select_dropdown_option(
             self.browser_session.page(),
             dropdown_locator,
-            dropdown_answer,
+            value,
             regulator=get_dropdown_regulator_by_field_key(field.field_key),
         )
 
