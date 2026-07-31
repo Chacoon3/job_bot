@@ -1,10 +1,11 @@
 import json
 import random
-from typing import Callable
+from collections.abc import Callable
+from typing import Any
 
 from playwright.async_api import Page, expect
 
-from job_bot.schemas import DropdownOption, DropdownSnapshot
+from job_bot.schemas import DropdownOption, DropdownSnapshot, FormField, PageInspection
 from job_bot.utils.browser_tools import Locator
 
 
@@ -267,3 +268,184 @@ async def select_dropdown_option(
         "false",
         timeout=timeout,
     )
+
+
+def _infer_field_key(field: dict[str, Any]) -> str:
+    """Infer common application-field keys from live DOM metadata."""
+    name = " ".join(
+        str(field.get(key) or "")
+        for key in ("accessible_name", "input_name", "element_id", "placeholder")
+    ).casefold()
+    group = str(field.get("group_label") or "").casefold()
+    tag = str(field.get("tag") or "").casefold()
+    input_type = str(field.get("input_type") or "").casefold()
+
+    if "country" in name and "phone" in group:
+        return "phone_country"
+    if input_type == "tel":
+        return "phone"
+    if "resume" in group or "cv" in group:
+        return "attach_resume_button"
+    if "cover letter" in group:
+        return "attach_cover_letter_button"
+    if input_type == "submit" or (tag == "button" and "submit application" in name):
+        return "submit_button"
+
+    rules = (
+        (("first name", "first_name", "firstname"), "first_name"),
+        (("last name", "last_name", "lastname"), "last_name"),
+        (("email",), "email"),
+        (("phone", "telephone"), "phone"),
+        (("location (city)", "city"), "city"),
+        (("linkedin",), "linkedin_url"),
+        (("github",), "github_url"),
+        (("portfolio",), "portfolio_url"),
+        (("website",), "website_url"),
+        (("sponsorship",), "requires_sponsorship"),
+        (("authorized to work", "authorization to work"), "authorized_to_work"),
+        (("salary",), "desired_salary"),
+        (("veteran",), "veteran_status"),
+        (("disability",), "disability_status"),
+        (("hispanic", "latino"), "is_hispanic_or_latino"),
+        (("gender",), "gender"),
+        (("resume", "cv"), "attach_resume_button"),
+        (("cover letter",), "attach_cover_letter_button"),
+        (("country",), "country"),
+    )
+    for needles, field_key in rules:
+        if any(needle in name for needle in needles):
+            return field_key
+    return "unknown"
+
+
+async def inspect_active_page(page: Page) -> PageInspection:
+    """Inspect interactive controls in the active Playwright page.
+
+    The browser computes DOM- and accessibility-derived facts in one pass.  No
+    network lookup or language-model inference is involved, so the returned
+    roles and element identities describe the same page that will be filled.
+    """
+    raw_fields = await page.evaluate(
+        r"""
+        () => {
+          const clean = value => (value || '').replace(/\s+/g, ' ').trim();
+          const textByIds = value => clean(value).split(' ').filter(Boolean)
+            .map(id => document.getElementById(id))
+            .filter(Boolean)
+            .map(node => clean(node.innerText || node.textContent));
+          const labelsFor = element => {
+            const native = element.labels
+              ? [...element.labels].map(label => clean(label.innerText || label.textContent))
+              : [];
+            const referenced = textByIds(element.getAttribute('aria-labelledby'));
+            return [...new Set([...native, ...referenced].filter(Boolean))];
+          };
+          const accessibleName = (element, labels) => clean(
+            element.getAttribute('aria-label')
+            || labels.join(' ')
+            || element.getAttribute('title')
+            || element.getAttribute('placeholder')
+            || (['BUTTON', 'A'].includes(element.tagName)
+              ? element.innerText || element.textContent
+              : '')
+          ).replace(/\s*\*\s*$/, '');
+          const groupFor = element => {
+            const group = element.closest('fieldset, [role="group"]');
+            if (!group) return {key: null, label: null};
+            const legend = group.querySelector(':scope > legend');
+            const referenced = textByIds(group.getAttribute('aria-labelledby'));
+            return {
+              key: group.id || group.getAttribute('name') || null,
+              label: clean(
+                group.getAttribute('aria-label')
+                || referenced.join(' ')
+                || (legend && (legend.innerText || legend.textContent))
+              ) || null,
+            };
+          };
+          const controls = document.querySelectorAll(
+            'input, textarea, select, button, a[href], [contenteditable="true"], [role="combobox"]'
+          );
+
+          return [...new Set(controls)].map(element => {
+            const tag = element.tagName.toLowerCase();
+            const role = element.getAttribute('role');
+            const type = element.getAttribute('type');
+            const labels = labelsFor(element);
+            const name = accessibleName(element, labels);
+            const group = groupFor(element);
+            const isCombobox = role === 'combobox';
+            const isNativeSelect = tag === 'select';
+            const isContentEditable = element.isContentEditable;
+            const interactionStrategy = isNativeSelect ? 'select_native'
+              : isCombobox ? 'select_combobox'
+              : type === 'radio' ? 'select_radio'
+              : type === 'checkbox' ? 'toggle_checkbox'
+              : type === 'file' ? 'upload_file'
+              : type === 'date' ? 'pick_date'
+              : isContentEditable ? 'fill_contenteditable'
+              : ['input', 'textarea'].includes(tag) ? 'fill'
+              : ['button', 'a'].includes(tag) ? 'click'
+              : 'unsupported';
+            const controlKind = tag === 'textarea' ? 'textarea'
+              : isNativeSelect ? 'select'
+              : tag === 'button' || tag === 'a' ? 'button'
+              : isContentEditable ? 'contenteditable'
+              : tag === 'input' ? 'input'
+              : 'unknown';
+            const value = type === 'checkbox' || type === 'radio'
+              ? Boolean(element.checked)
+              : 'value' in element ? element.value || null : null;
+
+            return {
+              interaction_strategy: interactionStrategy,
+              control_kind: controlKind,
+              element_id: element.id || null,
+              input_name: element.getAttribute('name'),
+              test_id: element.getAttribute('data-testid'),
+              tag,
+              role,
+              input_type: type,
+              accessible_name: name || null,
+              labels,
+              placeholder: element.getAttribute('placeholder'),
+              current_value: value,
+              options: isNativeSelect ? [...element.options].map(option => ({
+                label: clean(option.label || option.textContent),
+                value: option.value || null,
+                selected: option.selected,
+                disabled: option.disabled,
+              })) : [],
+              required: Boolean(
+                element.required || element.getAttribute('aria-required') === 'true'
+              ),
+              visible: Boolean(element.getClientRects().length),
+              enabled: !Boolean(
+                element.disabled || element.getAttribute('aria-disabled') === 'true'
+              ),
+              editable: ['input', 'textarea'].includes(tag) || isContentEditable,
+              readonly: Boolean(
+                element.readOnly || element.getAttribute('aria-readonly') === 'true'
+              ),
+              checked: type === 'checkbox' || type === 'radio' ? Boolean(element.checked) : null,
+              multiple: Boolean(element.multiple),
+              form_id: element.form ? element.form.id || null : null,
+              group_key: group.key,
+              group_label: group.label,
+              component: isCombobox && name.toLowerCase().includes('country')
+                && (group.label || '').toLowerCase().includes('phone') ? 'phone_country'
+                : name.toLowerCase().includes('phone') ? 'phone_number'
+                : 'standalone',
+              frame_url: window.location.href,
+              frame_name: window.name || null,
+            };
+          });
+        }
+        """
+    )
+
+    fields: list[FormField] = []
+    for raw_field in raw_fields:
+        raw_field["field_key"] = _infer_field_key(raw_field)
+        fields.append(FormField.model_validate(raw_field))
+    return PageInspection(form_fields=fields)
