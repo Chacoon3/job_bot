@@ -54,8 +54,11 @@ class _AgentContext(BaseModel):
 )
 async def inspect_page(url: str) -> list[FormField]:
     openai_client = get_async_openai_client()
+    model = os.getenv("JOB_BOT_LLM_MODEL")
+    if not model:
+        raise RuntimeError("Environment variable JOB_BOT_LLM_MODEL is not set.")
     response = await openai_client.responses.parse(
-        model=os.getenv("JOB_BOT_LLM_MODEL", "gpt-5.4-nano"),
+        model=model,
         input=[
             {
                 "role": "system",
@@ -203,7 +206,7 @@ async def agent_flow(url: str, playwright: Playwright):
             inspect_page(url), page.goto(url, wait_until="domcontentloaded"), asyncio.sleep(2)
         )
         fields = res[0]
-        filler = GreenHouseFiller(browser_session)
+        filler = GreenHouseFiller(browser_session, None)
         for field in fields:
             try:
                 if field.input_type in ["text", "email", "tel", "url", "number"]:

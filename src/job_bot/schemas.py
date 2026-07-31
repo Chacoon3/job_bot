@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.dialects.postgresql import Range
@@ -229,13 +230,21 @@ class CandidateProfile(BaseModel):
             f"Portfolio: {self.portfolio_url}\n"
             f"Requires Sponsorship: {self.requires_sponsorship.title()}\n"
             f"Education:\n{education_str}\n"
-            f"Resume Text:\n{self.resume_text}\n"
             f"Summary:\n{self.summary}"
         )
 
     def get_answer(self, field_key: JobFormFieldKey) -> Any:
         """Get the answer for a given field key."""
         return getattr(self, field_key, None)
+
+
+class CandidateProfileVersion(BaseModel):
+    candidate_id: UUID
+    version: int = Field(ge=1)
+    profile: CandidateProfile
+    resume_filename: str
+    created_at: datetime
+    deleted_at: datetime | None = None
 
 
 InteractionKind = Literal[
