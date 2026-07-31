@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import os
-from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+
+from job_bot.logging import configure_logging
 
 DATABASE_URL_ENV = "DATABASE_URL"
 
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+configure_logging()
 
 # Migrations are deliberately explicit. Runtime ORM metadata is not used for
 # schema generation or autogeneration.

@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 from playwright.async_api import expect
 from structlog import get_logger
+from structlog.contextvars import bind_contextvars, unbind_contextvars
 
 from job_bot.agent.dropdown_regulator import get_dropdown_regulator_by_field_key
 from job_bot.agent.file_upload import upload_greenhouse_cover_letter, upload_greenhouse_resume
@@ -41,26 +42,29 @@ class BaseFiller(ABC):
     async def fill_fields(self, fields: list[FormField]) -> None:
         for field in fields:
             try:
+                bind_contextvars(
+                    field_key=field.field_key,
+                    accessible_name=field.accessible_name,
+                    interaction_kind=field.interaction_kind,
+                    input_type=field.input_type,
+                )
+
+                if field.field_key == "application-irrelevant":
+                    get_logger().info("Skipping irrelevant field")
+                    continue
+
                 filler = getattr(self, field.interaction_kind, None)
                 if filler is None:
-                    raise ValueError(
-                        f"No filler found for interaction kind: {field.interaction_kind}"
-                    )
+                    raise ValueError("No filler found for interaction kind.")
                 answer = self.user.get_answer(field.field_key)
                 if answer is None:
-                    raise ValueError(f"No answer found for field key: {field.field_key}")
+                    raise ValueError("No answer found for field key")
                 await filler(field, answer)
-                get_logger().info(
-                    "Field filled successfully",
-                    field_name=field.accessible_name,
-                    field_value=str(answer)[:5],
-                )
+                get_logger().info("Field filled successfully", field_value=str(answer)[:5])
             except Exception as e:
-                get_logger().error(
-                    "Error filling field",
-                    field_key=field.field_key,
-                    error=str(e),
-                )
+                get_logger().error("Error filling field", error=str(e))
+            finally:
+                unbind_contextvars("field_key", "accessible_name", "interaction_kind", "input_type")
 
 
 class GreenHouseFiller(BaseFiller):

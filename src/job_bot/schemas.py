@@ -152,6 +152,7 @@ JobFormFieldKey = Literal[
     "privacy_consent",
     "communications_consent",
     "terms_acknowledgement",
+    "application-irrelevant",
     # Long-tail fields
     "custom_question",
     "unknown",
