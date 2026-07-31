@@ -58,6 +58,12 @@ def _record(
 def _supplement() -> candidate_profile.CandidateProfileSupplement:
     return candidate_profile.CandidateProfileSupplement(
         phone_country="+1",
+        address_line_1="123 Main St",
+        address_line_2="Apt 4B",
+        city="New York",
+        state="NY",
+        postal_code="10001",
+        country="United States",
         authorized_to_work="yes",
         requires_sponsorship="no",
         willing_to_relocate="no",
@@ -71,7 +77,17 @@ def test_extract_candidate_profile_uploads_resume_and_parses_structured_output(
     client = Mock()
     client.files.create = AsyncMock(return_value=SimpleNamespace(id="file-resume"))
     client.files.delete = AsyncMock()
-    client.responses.parse = AsyncMock(return_value=SimpleNamespace(output_parsed=_profile()))
+    resume_profile = _profile().model_copy(
+        update={
+            "address_line_1": "Address from resume",
+            "address_line_2": None,
+            "city": "Resume City",
+            "state": "CA",
+            "postal_code": "90210",
+            "country": "Resume Country",
+        }
+    )
+    client.responses.parse = AsyncMock(return_value=SimpleNamespace(output_parsed=resume_profile))
     monkeypatch.setenv("JOB_BOT_LLM_MODEL", "test-model")
     monkeypatch.setattr(candidate_profile, "get_async_openai_client", lambda: client)
 
@@ -85,6 +101,12 @@ def test_extract_candidate_profile_uploads_resume_and_parses_structured_output(
 
     assert result.requires_sponsorship == "no"
     assert result.willing_to_relocate == "no"
+    assert result.address_line_1 == "123 Main St"
+    assert result.address_line_2 == "Apt 4B"
+    assert result.city == "New York"
+    assert result.state == "NY"
+    assert result.postal_code == "10001"
+    assert result.country == "United States"
     client.files.create.assert_awaited_once_with(
         file=("resume.pdf", b"resume bytes"),
         purpose="user_data",
@@ -98,6 +120,7 @@ def test_extract_candidate_profile_uploads_resume_and_parses_structured_output(
         "file_id": "file-resume",
     }
     assert '"requires_sponsorship": "no"' in request["input"][0]["content"][1]["text"]
+    assert '"address_line_1": "123 Main St"' in request["input"][0]["content"][1]["text"]
     client.files.delete.assert_awaited_once_with("file-resume")
 
 
@@ -239,21 +262,23 @@ def test_upload_candidate_profile_merges_form_answers_and_creates_version(
         record.resume_filename = kwargs["resume_filename"]
         return record
 
-    app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(
-        candidate_profile,
-        "_extract_candidate_profile",
-        AsyncMock(
-            return_value=_profile().model_copy(
-                update={
-                    "requires_sponsorship": "no",
-                    "willing_to_relocate": "no",
-                    "gender": "decline",
-                    "race": "decline",
-                }
-            )
-        ),
+    extract_profile = AsyncMock(
+        return_value=_profile().model_copy(
+            update={
+                "address_line_1": "123 Main St",
+                "city": "New York",
+                "state": "NY",
+                "postal_code": "10001",
+                "country": "United States",
+                "requires_sponsorship": "no",
+                "willing_to_relocate": "no",
+                "gender": "decline",
+                "race": "decline",
+            }
+        )
     )
+    app.dependency_overrides[dependencies.get_session] = lambda: session
+    monkeypatch.setattr(candidate_profile, "_extract_candidate_profile", extract_profile)
     monkeypatch.setattr(candidate_profile, "create_profile_version", fake_create)
 
     response = TestClient(app).put(
@@ -263,6 +288,11 @@ def test_upload_candidate_profile_merges_form_answers_and_creates_version(
             "requires_sponsorship": "no",
             "willing_to_relocate": "no",
             "race": "decline",
+            "address_line_1": "123 Main St",
+            "city": "New York",
+            "state": "NY",
+            "postal_code": "10001",
+            "country": "United States",
         },
         files={"resume": ("../resume.pdf", b"resume bytes", "application/pdf")},
     )
@@ -274,7 +304,13 @@ def test_upload_candidate_profile_merges_form_answers_and_creates_version(
     assert payload["profile"]["requires_sponsorship"] == "no"
     assert payload["profile"]["willing_to_relocate"] == "no"
     assert payload["profile"]["gender"] == "decline"
+    assert payload["profile"]["address_line_1"] == "123 Main St"
+    assert payload["profile"]["city"] == "New York"
     assert payload["resume_filename"] == "resume.pdf"
+    supplement = extract_profile.await_args.args[2]
+    assert supplement.address_line_1 == "123 Main St"
+    assert supplement.city == "New York"
+    assert supplement.country == "United States"
     assert captured["candidate_id"] == candidate_id
     assert len(captured["resume_sha256"]) == 64
     assert session.committed is True
