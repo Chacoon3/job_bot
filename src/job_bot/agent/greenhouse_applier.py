@@ -1,5 +1,6 @@
 import random
 import re
+from typing import Any
 
 from playwright.async_api import expect
 from structlog import get_logger
@@ -14,7 +15,7 @@ from job_bot.agent.filler_tools import (
     locate_by_accessible_name,
     select_dropdown_option,
 )
-from job_bot.schemas import FormField
+from job_bot.schemas import FormField, JobFormFieldKey
 
 
 def _canonicalize_phone_number(value: object) -> str:
@@ -77,6 +78,10 @@ def _has_correct_value(field: FormField, expected_value: object) -> bool:
 
 
 class GreenHouseFiller(BaseApplier):
+
+    def get_answer(self, field_key: JobFormFieldKey) -> Any:
+        """Get the answer for a given field key."""
+        return getattr(self.user, field_key, None)
 
     async def fill(self, field: FormField, value: str) -> None:
         locator = locate_by_accessible_name(
@@ -142,8 +147,7 @@ class GreenHouseFiller(BaseApplier):
 
         await radio_locator.check()
 
-    async def toggle_checkbox(self, field: FormField, value: bool) -> None:
-        pass
+    async def toggle_checkbox(self, field: FormField, value: bool) -> None: ...
 
     async def upload_file(self, field: FormField, value: str) -> None:
         if field.field_key == "attach_resume_button":
@@ -155,6 +159,7 @@ class GreenHouseFiller(BaseApplier):
                     self.browser_session.page(),
                     self.file_set.resume,
                 )
+
         elif field.field_key == "attach_cover_letter_button":
             if self.file_set.cover_letter is None:
                 get_logger().warning("No cover letter file provided for upload.")
@@ -205,9 +210,7 @@ class GreenHouseFiller(BaseApplier):
                         get_logger().info("Skipping not supported field")
                         continue
 
-                    answer = self.user.get_answer(field.field_key)
-                    if answer is None:
-                        raise ValueError("No answer found for field key")
+                    answer = self.get_answer(field.field_key)
                     # check if already filled with correct answer
                     if _has_correct_value(field, answer):
                         continue
@@ -227,7 +230,7 @@ class GreenHouseFiller(BaseApplier):
 
             completed_inspection = await inspect_active_page(self.browser_session.page())
             all_fields_filled = all(
-                _has_correct_value(field, self.user.get_answer(field.field_key))
+                _has_correct_value(field, self.get_answer(field.field_key))
                 for field in completed_inspection.form_fields
             )
 

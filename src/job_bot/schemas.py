@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -246,10 +246,6 @@ class User(BaseModel):
             f"Education:\n{education_str}\n"
             f"Summary:\n{self.summary}"
         )
-
-    def get_answer(self, field_key: JobFormFieldKey) -> Any:
-        """Get the answer for a given field key."""
-        return getattr(self, field_key, None)
 
 
 class UserResponse(BaseModel):
