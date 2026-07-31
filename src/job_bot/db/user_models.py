@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, Index, String, Text, Uuid, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -56,7 +65,7 @@ class User(Base):
             "jsonb_typeof(education) = 'array'",
             name="ck_users_education_array",
         ),
-        Index("idx_users_email", "email"),
+        UniqueConstraint("email", name="uq_users_email"),
         Index("idx_users_created_at", "created_at"),
     )
 
@@ -103,4 +112,3 @@ class User(Base):
         server_default=text("CURRENT_TIMESTAMP"),
         onupdate=text("CURRENT_TIMESTAMP"),
     )
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

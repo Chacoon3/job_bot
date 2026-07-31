@@ -252,7 +252,6 @@ class UserResponse(BaseModel):
     resume_filename: str
     created_at: datetime
     updated_at: datetime
-    deleted_at: datetime | None = None
 
 
 InteractionKind = Literal[

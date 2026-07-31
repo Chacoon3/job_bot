@@ -38,11 +38,7 @@ def _user() -> User:
     )
 
 
-def _record(
-    user_id: UUID,
-    *,
-    deleted_at: datetime | None = None,
-) -> SimpleNamespace:
+def _record(user_id: UUID) -> SimpleNamespace:
     timestamp = datetime(2026, 7, 30, tzinfo=UTC)
     return SimpleNamespace(
         **_user().model_dump(mode="json"),
@@ -51,7 +47,6 @@ def _record(
         resume_sha256="0" * 64,
         created_at=timestamp,
         updated_at=timestamp,
-        deleted_at=deleted_at,
     )
 
 
@@ -152,7 +147,7 @@ def test_get_user_returns_the_current_user(monkeypatch) -> None:
     app.dependency_overrides[dependencies.get_session] = lambda: session
     monkeypatch.setattr(user, "get_user", lambda *_args: _record(user_id))
 
-    response = TestClient(app).get(f"/apiv1/user/{user_id}")
+    response = TestClient(app).get("/apiv1/user/alex@example.com")
 
     app.dependency_overrides.clear()
 
@@ -163,11 +158,10 @@ def test_get_user_returns_the_current_user(monkeypatch) -> None:
 
 
 def test_get_user_returns_not_found(monkeypatch) -> None:
-    user_id = uuid4()
     app.dependency_overrides[dependencies.get_session] = lambda: DummySession()
     monkeypatch.setattr(user, "get_user", lambda *_args: None)
 
-    response = TestClient(app).get(f"/apiv1/user/{user_id}")
+    response = TestClient(app).get("/apiv1/user/missing@example.com")
 
     app.dependency_overrides.clear()
 
@@ -199,7 +193,7 @@ def test_update_user_replaces_current_data(monkeypatch) -> None:
     monkeypatch.setattr(user, "upsert_user", fake_upsert)
 
     response = TestClient(app).put(
-        f"/apiv1/user/{user_id}",
+        "/apiv1/user/alex@example.com",
         data={
             "authorized_to_work": "yes",
             "requires_sponsorship": "no",
@@ -212,22 +206,22 @@ def test_update_user_replaces_current_data(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["user"]["requires_sponsorship"] == "no"
-    assert captured["user_id"] == user_id
+    assert captured["user"].email == "alex@example.com"
+    assert "user_id" not in captured
     assert len(captured["resume_sha256"]) == 64
     assert session.committed is True
 
 
-def test_create_user_assigns_user_id(monkeypatch) -> None:
+def test_create_user_upserts_by_extracted_email(monkeypatch) -> None:
     generated_user_id = uuid4()
     session = DummySession()
     captured: dict[str, object] = {}
 
     def fake_upsert(received_session, **kwargs):
         captured.update(session=received_session, **kwargs)
-        return _record(kwargs["user_id"])
+        return _record(generated_user_id)
 
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(user, "uuid4", lambda: generated_user_id)
     monkeypatch.setattr(user, "_extract_user", AsyncMock(return_value=_user()))
     monkeypatch.setattr(user, "upsert_user", fake_upsert)
 
@@ -245,24 +239,48 @@ def test_create_user_assigns_user_id(monkeypatch) -> None:
 
     assert response.status_code == 201
     assert response.json()["user_id"] == str(generated_user_id)
-    assert captured["user_id"] == generated_user_id
+    assert captured["user"].email == "alex@example.com"
+    assert "user_id" not in captured
 
 
-def test_delete_user_soft_deletes_user(monkeypatch) -> None:
-    user_id = uuid4()
+def test_update_user_rejects_mismatched_email(monkeypatch) -> None:
     session = DummySession()
-    deleted_at = datetime(2026, 7, 30, tzinfo=UTC)
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(
-        user,
-        "delete_user",
-        lambda *_args: _record(user_id, deleted_at=deleted_at),
+    monkeypatch.setattr(user, "_extract_user", AsyncMock(return_value=_user()))
+
+    response = TestClient(app).put(
+        "/apiv1/user/different@example.com",
+        data={
+            "authorized_to_work": "yes",
+            "requires_sponsorship": "no",
+            "willing_to_relocate": "yes",
+        },
+        files={"resume": ("resume.pdf", b"resume bytes", "application/pdf")},
     )
 
-    response = TestClient(app).delete(f"/apiv1/user/{user_id}")
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert session.committed is False
+
+
+def test_delete_user_permanently_deletes_by_email(monkeypatch) -> None:
+    user_id = uuid4()
+    session = DummySession()
+    captured: dict[str, object] = {}
+
+    def fake_delete(received_session, email):
+        captured.update(session=received_session, email=email)
+        return _record(user_id)
+
+    app.dependency_overrides[dependencies.get_session] = lambda: session
+    monkeypatch.setattr(user, "delete_user", fake_delete)
+
+    response = TestClient(app).delete("/apiv1/user/alex@example.com")
 
     app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json()["deleted_at"] == "2026-07-30T00:00:00Z"
+    assert "deleted_at" not in response.json()
+    assert captured["email"] == "alex@example.com"
     assert session.committed is True

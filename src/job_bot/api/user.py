@@ -7,10 +7,9 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
-from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
@@ -205,16 +204,15 @@ def _response(record: ORMUser) -> UserResponse:
         resume_filename=record.resume_filename,
         created_at=record.created_at,
         updated_at=record.updated_at,
-        deleted_at=record.deleted_at,
     )
 
 
-@router.get("/{user_id}")
+@router.get("/{email}")
 def read_user(
-    user_id: UUID,
+    email: EmailStr,
     session: Annotated[Session, Depends(get_session)],
 ) -> UserResponse:
-    record = get_user(session, user_id)
+    record = get_user(session, str(email))
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -229,23 +227,37 @@ async def create_user(
     resume: Annotated[UploadFile, File(description="PDF or Word resume, up to 10 MiB")],
     session: Annotated[Session, Depends(get_session)],
 ) -> UserResponse:
-    """Create a user with a newly assigned ID."""
-    return await update_user(
-        user_id=uuid4(),
+    """Create or replace a user based on the resume's email address."""
+    return await _upsert_user_from_upload(
         supplement=supplement,
         resume=resume,
         session=session,
     )
 
 
-@router.put("/{user_id}")
+@router.put("/{email}")
 async def update_user(
-    user_id: UUID,
+    email: EmailStr,
     supplement: Annotated[UserSupplement, Depends(_supplement_from_form)],
     resume: Annotated[UploadFile, File(description="PDF or Word resume, up to 10 MiB")],
     session: Annotated[Session, Depends(get_session)],
 ) -> UserResponse:
-    """Replace the current data owned by a user."""
+    """Replace a user identified by email address."""
+    return await _upsert_user_from_upload(
+        supplement=supplement,
+        resume=resume,
+        session=session,
+        expected_email=str(email),
+    )
+
+
+async def _upsert_user_from_upload(
+    *,
+    supplement: UserSupplement,
+    resume: UploadFile,
+    session: Session,
+    expected_email: str | None = None,
+) -> UserResponse:
     filename = Path(resume.filename or "resume").name
     if Path(filename).suffix.casefold() not in SUPPORTED_RESUME_SUFFIXES:
         raise HTTPException(
@@ -266,9 +278,13 @@ async def update_user(
         )
 
     user = await _extract_user(content, filename, supplement)
+    if expected_email is not None and user.email != expected_email.casefold():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Resume email does not match the user email in the request path",
+        )
     record = upsert_user(
         session,
-        user_id=user_id,
         user=user,
         resume_filename=filename,
         resume_sha256=hashlib.sha256(content).hexdigest(),
@@ -278,16 +294,17 @@ async def update_user(
     return _response(record)
 
 
-@router.delete("/{user_id}")
+@router.delete("/{email}")
 def remove_user(
-    user_id: UUID,
+    email: EmailStr,
     session: Annotated[Session, Depends(get_session)],
 ) -> UserResponse:
-    record = delete_user(session, user_id)
+    record = delete_user(session, str(email))
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
+    response = _response(record)
     session.commit()
-    return _response(record)
+    return response

@@ -26,8 +26,10 @@ def test_users_table_matches_the_pydantic_user_model() -> None:
     assert "resume_filename VARCHAR(512) NOT NULL" in ddl
     assert "created_at TIMESTAMP WITH TIME ZONE" in ddl
     assert "updated_at TIMESTAMP WITH TIME ZONE" in ddl
+    assert "deleted_at" not in column_names
+    assert "CONSTRAINT uq_users_email UNIQUE (email)" in ddl
     assert "CONSTRAINT ck_users_education_array" in ddl
-    assert "CREATE INDEX idx_users_email ON users (email)" in index_ddl
+    assert "CREATE INDEX idx_users_created_at ON users (created_at)" in index_ddl
 
 
 def test_no_user_profile_table_is_registered() -> None:
