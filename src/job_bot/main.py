@@ -24,7 +24,13 @@ def main() -> None:
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-    uvicorn.run("job_bot.main:app", host="127.0.0.1", port=8080, reload=False)
+    uvicorn.run(
+        "job_bot.main:app",
+        host="127.0.0.1",
+        port=8080,
+        reload=False,
+        log_config=None,
+    )
 
 
 if __name__ == "__main__":
