@@ -49,7 +49,7 @@ async def inspect(
     user = user_from_record(record)
 
     async with async_playwright() as playwright:
-        await agent_flow(job_url, playwright, user, application_file_set)
+        await agent_flow(job_url, playwright, user, application_file_set, session)
 
     # pause the execution
 

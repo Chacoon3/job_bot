@@ -5,11 +5,15 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from job_bot.agent.planned_applier import (
+    PAGE_INSPECTION_CACHE_TTL_SECONDS,
     FormField,
     PageInspection,
+    _load_page_inspections,
+    _save_page_inspections,
     agent_flow,
     inspect_page,
 )
+from job_bot.utils.caching import AppCache
 from job_bot.utils.hash_helper import schema_string_key
 
 
@@ -31,8 +35,62 @@ def _form_field() -> FormField:
     )
 
 
+def test_load_page_inspections_uses_redis_cache_for_seven_days(monkeypatch) -> None:
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.values: dict[str, bytes] = {}
+            self.set_calls: list[tuple[str, int | None]] = []
+
+        def get(self, key: str) -> bytes | None:
+            return self.values.get(key)
+
+        def set(self, key: str, value: bytes, px: int | None = None) -> None:
+            self.values[key] = value
+            self.set_calls.append((key, px))
+
+    redis = FakeRedis()
+    monkeypatch.setattr(AppCache, "_client", redis)
+
+    inspection = PageInspection(form_fields=[_form_field()])
+    first_session = Mock()
+    first_session.scalars.return_value.all.return_value = [
+        SimpleNamespace(inspection=inspection.model_dump(mode="json"))
+    ]
+    second_session = Mock()
+    url = "https://example.com/apply?test=redis-cache"
+    version = "test-version"
+
+    first_result = _load_page_inspections(first_session, url, version)
+    second_result = _load_page_inspections(second_session, url, version)
+
+    assert first_result == [inspection]
+    assert second_result == first_result
+    first_session.scalars.assert_called_once()
+    second_session.scalars.assert_not_called()
+    assert len(redis.set_calls) == 1
+    assert redis.set_calls[0][1] == PAGE_INSPECTION_CACHE_TTL_SECONDS * 1000
+
+
+def test_save_page_inspections_invalidates_cached_query(monkeypatch) -> None:
+    session = Mock()
+    session.scalar.return_value = SimpleNamespace(job_id=123)
+    delete = Mock()
+    monkeypatch.setattr(AppCache, "delete", delete)
+
+    _save_page_inspections(
+        session,
+        "https://example.com/apply?test=invalidate",
+        "test-version",
+        [PageInspection(form_fields=[_form_field()])],
+    )
+
+    session.commit.assert_called_once_with()
+    delete.assert_called_once()
+
+
 def test_inspect_page_generates_and_saves_versioned_inspection(monkeypatch) -> None:
     field = _form_field()
+    session = Mock()
     saved: dict[str, object] = {}
     client = Mock()
     client.responses.parse = AsyncMock(
@@ -46,16 +104,20 @@ def test_inspect_page_generates_and_saves_versioned_inspection(monkeypatch) -> N
     monkeypatch.setattr("job_bot.agent.planned_applier._load_page_inspections", lambda *_: [])
     monkeypatch.setattr(
         "job_bot.agent.planned_applier._save_page_inspections",
-        lambda url, version, inspections: saved.update(
-            url=url, version=version, inspections=inspections
+        lambda received_session, url, version, inspections: saved.update(
+            session=received_session,
+            url=url,
+            version=version,
+            inspections=inspections,
         ),
     )
     url = "https://example.com/apply?test=extract"
 
-    inspections = asyncio.run(inspect_page(url))
+    inspections = asyncio.run(inspect_page(url, session))
 
     assert inspections == [PageInspection(form_fields=[field])]
     assert saved == {
+        "session": session,
         "url": url,
         "version": schema_string_key(url + "test-model", PageInspection),
         "inspections": inspections,
@@ -70,6 +132,7 @@ def test_inspect_page_generates_and_saves_versioned_inspection(monkeypatch) -> N
 
 def test_inspect_page_returns_matching_database_inspections(monkeypatch) -> None:
     url = "https://example.com/apply?test=cached"
+    session = Mock()
     cached = [PageInspection(form_fields=[_form_field()])]
     load = Mock(return_value=cached)
     save = Mock()
@@ -79,15 +142,18 @@ def test_inspect_page_returns_matching_database_inspections(monkeypatch) -> None
     monkeypatch.setattr("job_bot.agent.planned_applier._save_page_inspections", save)
     monkeypatch.setattr("job_bot.agent.planned_applier.get_async_openai_client", client_factory)
 
-    result = asyncio.run(inspect_page(url))
+    result = asyncio.run(inspect_page(url, session))
 
     assert result == cached
-    load.assert_called_once_with(url, schema_string_key(url + "test-model", PageInspection))
+    load.assert_called_once_with(
+        session, url, schema_string_key(url + "test-model", PageInspection)
+    )
     save.assert_not_called()
     client_factory.assert_not_called()
 
 
 def test_inspect_page_rejects_unparsed_response(monkeypatch) -> None:
+    session = Mock()
     client = Mock()
     client.responses.parse = AsyncMock(return_value=SimpleNamespace(output_parsed=None))
     monkeypatch.setattr(
@@ -98,7 +164,7 @@ def test_inspect_page_rejects_unparsed_response(monkeypatch) -> None:
     monkeypatch.setattr("job_bot.agent.planned_applier._load_page_inspections", lambda *_: [])
 
     with pytest.raises(RuntimeError, match="Unexpected page inspection response type"):
-        asyncio.run(inspect_page("https://example.com/apply?test=unparsed"))
+        asyncio.run(inspect_page("https://example.com/apply?test=unparsed", session))
 
 
 def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
@@ -108,6 +174,7 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
     filler = SimpleNamespace(apply=AsyncMock())
     user = SimpleNamespace()
     file_set = SimpleNamespace()
+    session = Mock()
     browser_sessions = []
 
     class FakeBrowserSession:
@@ -133,7 +200,7 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
     monkeypatch.setattr("job_bot.agent.planned_applier.asyncio.sleep", AsyncMock())
 
     playwright = SimpleNamespace()
-    asyncio.run(agent_flow("https://example.com/apply", playwright, user, file_set))
+    asyncio.run(agent_flow("https://example.com/apply", playwright, user, file_set, session))
 
     page.goto.assert_awaited_once_with(
         "https://example.com/apply",
@@ -141,3 +208,4 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
     )
     filler_factory.assert_called_once_with(browser_sessions[0], user, file_set)
     filler.apply.assert_awaited_once_with([field])
+    inspect.assert_awaited_once_with("https://example.com/apply", session)

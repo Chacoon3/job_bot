@@ -383,3 +383,7 @@ class DropdownSnapshot(BaseModel):
 class ApplicationFileSet(BaseModel):
     resume: UploadableFile | None = None
     cover_letter: UploadableFile | None = None
+
+
+class PageInspection(BaseModel):
+    form_fields: list[FormField] = Field(default_factory=list)

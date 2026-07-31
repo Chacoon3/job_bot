@@ -20,7 +20,9 @@ def _read_float_env(name: str) -> float | None:
 def _build_redis_cache() -> RedisCache:
     default_ttl = _read_float_env("APP_CACHE_TTL_SECONDS")
 
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    redis_url = os.getenv("REDIS_URL")
+    if not redis_url:
+        raise ValueError("REDIS_URL environment variable is required for RedisCache")
     redis_prefix = os.getenv("REDIS_CACHE_PREFIX", "job_bot:cache")
     redis_timeout = _read_float_env("REDIS_SOCKET_TIMEOUT_SECONDS")
     socket_timeout = 1.0 if redis_timeout is None else redis_timeout
@@ -39,7 +41,7 @@ def _build_disk_cache() -> DiskCache:
     return DiskCache(cache_dir, ttl=default_ttl)
 
 
-AppCache = _build_redis_cache()
+AppRedisCache = _build_redis_cache()
 
 # Backwards-compatible name used by existing imports.
 AppDiskCache = _build_disk_cache()

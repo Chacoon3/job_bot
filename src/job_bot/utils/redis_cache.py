@@ -4,8 +4,9 @@ import hashlib
 import importlib
 import inspect
 import pickle
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, ParamSpec, TypeVar, cast, overload
+from typing import Any, ParamSpec, TypeVar, cast, overload
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -114,6 +115,14 @@ class RedisCache:
             # Cache clear should not fail application logic.
             return
 
+    def delete(self, key: str) -> None:
+        """Remove one entry from the cache."""
+        try:
+            self._client.delete(self._qualified_key(key))
+        except Exception:
+            # Cache invalidation should not fail application logic.
+            return
+
     def _build_wrapper(
         self,
         func: Callable[P, R],
@@ -160,7 +169,7 @@ class RedisCache:
         if key_builder is not None:
             return key_builder(func, args, kwargs)
 
-        func_id = f"{func.__module__}.{func.__qualname__}".encode("utf-8")
+        func_id = f"{func.__module__}.{func.__qualname__}".encode()
         sanitized_args = self._sanitize_method_args(func, args)
         args_blob = self._to_stable_bytes(sanitized_args)
         kwargs_blob = self._to_stable_bytes(self._ordered_kwargs(kwargs))

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import inspect
 import os
+from collections.abc import Callable
 from functools import cache
 from operator import add
-from typing import Annotated
+from typing import Annotated, Any
 
 from langchain.messages import AIMessage, AnyMessage, ToolMessage
 from langchain_core.language_models.base import LanguageModelInput
@@ -14,48 +17,61 @@ from langgraph.graph import StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 from playwright.async_api import Playwright
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 from structlog import get_logger
 
 from job_bot.agent.filler import GreenHouseFiller
-from job_bot.db.database import create_database_engine, create_session_factory, session_scope
 from job_bot.db.job_models import Job, JobPageInspection
 from job_bot.openai_client import get_async_openai_client
-from job_bot.schemas import ApplicationFileSet, FormField, User
+from job_bot.schemas import ApplicationFileSet, FormField, PageInspection, User
 from job_bot.utils.browser_tools import BrowserSession
+from job_bot.utils.caching import AppRedisCache
 from job_bot.utils.decorators import log_upon_exit
 from job_bot.utils.file_upload import UploadableFile
 from job_bot.utils.hash_helper import schema_string_key
 
-
-class PageInspection(BaseModel):
-    form_fields: list[FormField] = Field(default_factory=list)
+PAGE_INSPECTION_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 
 
-@cache
-def _inspection_session_factory() -> sessionmaker[Session]:
-    return create_session_factory(create_database_engine())
+def _page_inspections_key(url: str, version: str) -> str:
+    digest = hashlib.sha256(f"{url}\0{version}".encode()).hexdigest()
+    return f"page_inspections_{digest}"
 
 
-def _load_page_inspections(url: str, version: str) -> list[PageInspection]:
-    with session_scope(_inspection_session_factory()) as session:
-        records = session.scalars(
-            select(JobPageInspection)
-            .join(Job)
-            .where(Job.url == url, JobPageInspection.version == version)
-            .order_by(JobPageInspection.page_index)
-        ).all()
-        return [PageInspection.model_validate(record.inspection) for record in records]
+def _page_inspections_cache_key(
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> str:
+    bound = inspect.signature(func).bind(*args, **kwargs)
+    url = bound.arguments["url"]
+    version = bound.arguments["version"]
+    return _page_inspections_key(url, version)
+
+
+@AppRedisCache.cached(
+    key_builder=_page_inspections_cache_key,
+    ttl=PAGE_INSPECTION_CACHE_TTL_SECONDS,
+)
+def _load_page_inspections(session: Session, url: str, version: str) -> list[PageInspection]:
+    records = session.scalars(
+        select(JobPageInspection)
+        .join(Job)
+        .where(Job.url == url, JobPageInspection.version == version)
+        .order_by(JobPageInspection.page_index)
+    ).all()
+    return [PageInspection.model_validate(record.inspection) for record in records]
 
 
 def _save_page_inspections(
+    session: Session,
     url: str,
     version: str,
     inspections: list[PageInspection],
 ) -> None:
-    with session_scope(_inspection_session_factory()) as session:
+    try:
         job = session.scalar(select(Job).where(Job.url == url))
         if job is None:
             job = Job(
@@ -77,6 +93,11 @@ def _save_page_inspections(
             )
             for page_index, inspection in enumerate(inspections)
         )
+        session.commit()
+        AppRedisCache.delete(_page_inspections_key(url, version))
+    except Exception:
+        session.rollback()
+        raise
 
 
 class _AgentState(BaseModel):
@@ -95,13 +116,13 @@ class _AgentContext(BaseModel):
     model: Runnable[LanguageModelInput, AIMessage] | None = None
 
 
-async def inspect_page(url: str) -> list[PageInspection]:
+async def inspect_page(url: str, session: Session) -> list[PageInspection]:
     model = os.getenv("JOB_BOT_LLM_MODEL")
     if not model:
         raise RuntimeError("Environment variable JOB_BOT_LLM_MODEL is not set.")
 
     version = schema_string_key(url + model, PageInspection)
-    cached_inspections = await asyncio.to_thread(_load_page_inspections, url, version)
+    cached_inspections = _load_page_inspections(session, url, version)
     if cached_inspections:
         return cached_inspections
 
@@ -154,7 +175,7 @@ async def inspect_page(url: str) -> list[PageInspection]:
         )
 
     inspections = [inspection]
-    await asyncio.to_thread(_save_page_inspections, url, version, inspections)
+    _save_page_inspections(session, url, version, inspections)
     return inspections
 
 
@@ -249,7 +270,11 @@ async def use_tool(
 
 
 async def agent_flow(
-    url: str, playwright: Playwright, user: User, file_set: ApplicationFileSet
+    url: str,
+    playwright: Playwright,
+    user: User,
+    file_set: ApplicationFileSet,
+    session: Session,
 ) -> None:
 
     async with BrowserSession(playwright, False) as browser_session:
@@ -257,7 +282,10 @@ async def agent_flow(
 
         # do llm inspection and browser init in parallel
         # ensure we start page operation at
-        res = await asyncio.gather(inspect_page(url), page.goto(url, wait_until="domcontentloaded"))
+        res = await asyncio.gather(
+            inspect_page(url, session),
+            page.goto(url, wait_until="domcontentloaded"),
+        )
         await asyncio.sleep(3)
         fields = [field for inspection in res[0] for field in inspection.form_fields]
         filler = GreenHouseFiller(browser_session, user, file_set)
