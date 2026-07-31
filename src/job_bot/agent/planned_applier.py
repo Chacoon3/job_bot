@@ -19,7 +19,7 @@ from structlog import get_logger
 
 from job_bot.agent.filler import GreenHouseFiller
 from job_bot.openai_client import get_async_openai_client
-from job_bot.schemas import FormField, User
+from job_bot.schemas import ApplicationFileSet, FormField, User
 from job_bot.utils.browser_tools import BrowserSession
 from job_bot.utils.caching import AppDiskCache
 from job_bot.utils.decorators import log_upon_exit
@@ -195,7 +195,9 @@ async def use_tool(
     )
 
 
-async def agent_flow(url: str, playwright: Playwright, user: User) -> None:
+async def agent_flow(
+    url: str, playwright: Playwright, user: User, file_set: ApplicationFileSet
+) -> None:
 
     async with BrowserSession(playwright, False) as browser_session:
         page = browser_session.page()
@@ -206,7 +208,7 @@ async def agent_flow(url: str, playwright: Playwright, user: User) -> None:
             inspect_page(url), page.goto(url, wait_until="domcontentloaded"), asyncio.sleep(5)
         )
         fields = res[0]
-        filler = GreenHouseFiller(browser_session, user)
+        filler = GreenHouseFiller(browser_session, user, file_set)
         await filler.fill_fields(fields)
         await asyncio.sleep(10)  # Adjust the duration as needed
 

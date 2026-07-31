@@ -16,14 +16,16 @@ class UploadableFile(BaseModel):
     mime_type: str = Field(default="application/octet-stream", min_length=1)
 
 
-async def extract_uploadable_file(request: Request) -> UploadableFile:
-    """Extract the file stored under ``file`` in a multipart FastAPI request."""
+async def extract_uploadable_file(
+    request: Request, file_key: str = "file"
+) -> UploadableFile | None:
+    """Extract the file stored under the given ``file_key`` in a multipart FastAPI request."""
     form = await request.form()
-    uploaded_file = form.get("file")
+    uploaded_file = form.get(file_key)
     if not isinstance(uploaded_file, UploadFile):
-        raise ValueError("Form field 'file' must contain an uploaded file")
+        return None
     if not uploaded_file.filename:
-        raise ValueError("Uploaded file must have a filename")
+        return None
 
     return UploadableFile(
         filename=uploaded_file.filename,

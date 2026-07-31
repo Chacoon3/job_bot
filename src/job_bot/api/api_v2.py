@@ -10,7 +10,7 @@ from job_bot.agent.react_applier import apply_for_job
 from job_bot.api.dependencies import get_session
 from job_bot.db.app_redis import AppRedisAsync
 from job_bot.llm import OpenAILLMProvider
-from job_bot.schemas import User
+from job_bot.schemas import ApplicationFileSet, User
 from job_bot.users import canonical_email, get_user, user_from_record
 from job_bot.utils.file_upload import extract_uploadable_file, parse_pure_text_pdf
 from job_bot.utils.resume_parser import ai_parse_resume
@@ -25,11 +25,19 @@ async def inspect(
 ) -> Any:
     form = await request.form()
     email = form.get("email")
+    resume = await extract_uploadable_file(request, "resume")
+    if not resume:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Resume is required",
+        )
+    cover_letter = await extract_uploadable_file(request, "cover_letter")
     if not email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email is required",
         )
+    application_file_set = ApplicationFileSet(resume=resume, cover_letter=cover_letter)
     email = canonical_email(str(email))
     job_url = form.get("job_url")
     record = get_user(session, email)
@@ -41,12 +49,11 @@ async def inspect(
     user = user_from_record(record)
 
     async with async_playwright() as playwright:
-        await agent_flow(job_url, playwright, user)
+        await agent_flow(job_url, playwright, user, application_file_set)
 
     # pause the execution
 
 
-@router.post("/apply")
 async def api_apply(request: Request):
     form = await request.form()
     job_url = form.get("job_url")

@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import Range
 from job_bot.countries import regulate_country, regulate_phone_country_code
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import JobEntry
+from job_bot.utils.file_upload import UploadableFile
 
 
 class JobEntrySchema(BaseModel):
@@ -383,3 +384,8 @@ class DropdownSnapshot(BaseModel):
     complete: bool | None = None
 
     listbox_id: str | None = None
+
+
+class ApplicationFileSet(BaseModel):
+    resume: UploadableFile | None = None
+    cover_letter: UploadableFile | None = None

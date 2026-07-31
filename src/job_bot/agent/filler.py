@@ -4,19 +4,21 @@ from playwright.async_api import expect
 from structlog import get_logger
 
 from job_bot.agent.dropdown_regulator import get_dropdown_regulator_by_field_key
+from job_bot.agent.file_upload import upload_greenhouse_cover_letter, upload_greenhouse_resume
 from job_bot.agent.filler_tools import (
     fill_text_field,
     locate_by_accessible_name,
     select_dropdown_option,
 )
-from job_bot.schemas import FormField, User
+from job_bot.schemas import ApplicationFileSet, FormField, User
 from job_bot.utils.browser_tools import BrowserSession
 
 
 class BaseFiller(ABC):
-    def __init__(self, browser_session: BrowserSession, user: User):
+    def __init__(self, browser_session: BrowserSession, user: User, file_set: ApplicationFileSet):
         self.browser_session = browser_session
         self.user = user
+        self.file_set = file_set
 
     @abstractmethod
     async def text(self, field: FormField, value: str) -> None: ...
@@ -102,4 +104,21 @@ class GreenHouseFiller(BaseFiller):
         pass
 
     async def file_upload(self, field: FormField, value: str) -> None:
-        pass
+        if field.field_key == "attach_resume_button":
+            if self.file_set.resume is None:
+                get_logger().warning("No resume file provided for upload.")
+                return
+            else:
+                await upload_greenhouse_resume(
+                    self.browser_session.page(),
+                    self.file_set.resume,
+                )
+        elif field.field_key == "attach_cover_letter_button":
+            if self.file_set.cover_letter is None:
+                get_logger().warning("No cover letter file provided for upload.")
+                return
+            else:
+                await upload_greenhouse_cover_letter(
+                    self.browser_session.page(),
+                    self.file_set.cover_letter,
+                )

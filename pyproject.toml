@@ -100,6 +100,7 @@ disable = [
     "redefined-outer-name",
     "R0917",  # Too many pos vars
     "R0911",  # Too many return statements
+    "E1121",
 ]
 
 [tool.pylint.format]
