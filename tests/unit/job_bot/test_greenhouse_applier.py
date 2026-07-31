@@ -56,6 +56,30 @@ def test_has_correct_value_checks_the_selected_dropdown_option_semantically() ->
     assert not _has_correct_value(field, "no")
 
 
+def test_has_correct_value_canonicalizes_current_dropdown_value() -> None:
+    field = _field(
+        tag="select",
+        field_key="country",
+        interaction_strategy="select_native",
+        current_value="US",
+    )
+
+    assert _has_correct_value(field, "United States")
+    assert not _has_correct_value(field, "United Kingdom")
+
+
+def test_has_correct_value_accepts_selected_location_for_city() -> None:
+    field = _field(
+        role="combobox",
+        field_key="city",
+        interaction_strategy="select_combobox",
+        current_value="New York, New York, United States",
+    )
+
+    assert _has_correct_value(field, "New York")
+    assert not _has_correct_value(field, "York")
+
+
 def test_has_correct_value_checks_boolean_controls() -> None:
     checked = _field(
         field_key="privacy_consent",

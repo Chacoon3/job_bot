@@ -9,7 +9,11 @@ from job_bot.schemas import DropdownOption, DropdownSnapshot, FormField, PageIns
 from job_bot.utils.browser_tools import Locator
 
 
-async def fill_text_field(locator: Locator, value: str) -> None:
+async def fill_text_field(
+    locator: Locator,
+    value: str,
+    canonicalizer: Callable[[str], str] | None = None,
+) -> None:
     count = await locator.count()
     if count != 1:
         raise LookupError(f"Expected exactly one text field, found {count}")
@@ -30,7 +34,9 @@ async def fill_text_field(locator: Locator, value: str) -> None:
     await locator.press("Tab")  # Trigger blur/change.
 
     actual = await locator.input_value()
-    if actual != value:
+    expected_comparison = canonicalizer(value) if canonicalizer else value
+    actual_comparison = canonicalizer(actual) if canonicalizer else actual
+    if actual_comparison != expected_comparison:
         raise RuntimeError(f"Field did not retain value: expected={value!r}, actual={actual!r}")
 
 
@@ -148,9 +154,29 @@ async def _extract_custom_options(
 
     await expect(listbox).to_be_visible(timeout=timeout)
 
-    options_locator = listbox.get_by_role("option")
+    options = await _read_custom_options(listbox)
 
-    raw = await options_locator.evaluate_all(
+    if not options:
+        # For example, Location (City) needs a query before options exist.
+        return DropdownSnapshot(
+            kind="autocomplete",
+            options=[],
+            complete=False,
+            listbox_id=listbox_id,
+        )
+
+    return DropdownSnapshot(
+        kind="finite_combobox",
+        options=options,
+        # Verified for this Greenhouse React Select implementation.
+        # A generic virtualized dropdown should use None or False.
+        complete=True,
+        listbox_id=listbox_id,
+    )
+
+
+async def _read_custom_options(listbox: Locator) -> list[DropdownOption]:
+    raw = await listbox.get_by_role("option").evaluate_all(
         """
         options => options.map((option, index) => {
             const ariaSelected = option.getAttribute("aria-selected");
@@ -182,25 +208,7 @@ async def _extract_custom_options(
         """
     )
 
-    options = [DropdownOption(**item) for item in raw]
-
-    if not options:
-        # For example, Location (City) needs a query before options exist.
-        return DropdownSnapshot(
-            kind="autocomplete",
-            options=[],
-            complete=False,
-            listbox_id=listbox_id,
-        )
-
-    return DropdownSnapshot(
-        kind="finite_combobox",
-        options=options,
-        # Verified for this Greenhouse React Select implementation.
-        # A generic virtualized dropdown should use None or False.
-        complete=True,
-        listbox_id=listbox_id,
-    )
+    return [DropdownOption(**item) for item in raw]
 
 
 async def select_dropdown_option(
@@ -209,6 +217,7 @@ async def select_dropdown_option(
     option_label: str,
     regulator: Callable[[str], str] | None = None,
     *,
+    query: str | None = None,
     timeout: float = 5_000,
 ) -> None:
     snapshot = await extract_dropdown_options(
@@ -217,15 +226,35 @@ async def select_dropdown_option(
         timeout=timeout,
     )
 
+    if snapshot.kind == "autocomplete" and not snapshot.options:
+        await dropdown.press("ControlOrMeta+A")
+        await dropdown.press("Backspace")
+        await dropdown.press_sequentially(
+            query or option_label,
+            delay=random.randint(35, 110),
+        )
+
+        listbox_locator = page.locator(f'[role="listbox"][id={json.dumps(snapshot.listbox_id)}]')
+        options_locator = listbox_locator.get_by_role("option")
+        await expect(options_locator.nth(0)).to_be_visible(timeout=timeout)
+        snapshot.options = await _read_custom_options(listbox_locator)
+
     if not snapshot.options:
         raise OptionNotFoundError("Dropdown has no options")
 
-    normalize = regulator or (lambda value: value)
+    normalize = regulator or (lambda value: value.strip().casefold())
     normalized_target = normalize(option_label)
 
     matches = [
         option for option in snapshot.options if normalize(option.label) == normalized_target
     ]
+
+    if not matches and snapshot.kind == "autocomplete":
+        matches = [
+            option
+            for option in snapshot.options
+            if normalize(option.label).startswith(f"{normalized_target},")
+        ]
 
     if not matches:
         available = [option.label for option in snapshot.options]
@@ -393,9 +422,14 @@ async def inspect_active_page(page: Page) -> PageInspection:
               : isContentEditable ? 'contenteditable'
               : tag === 'input' ? 'input'
               : 'unknown';
+            const selectedComboboxValue = isCombobox
+              ? element.closest('[class*="control"]')?.querySelector('[class*="singleValue"]')
+              : null;
             const value = type === 'checkbox' || type === 'radio'
               ? Boolean(element.checked)
-              : 'value' in element ? element.value || null : null;
+              : isCombobox && selectedComboboxValue
+                ? clean(selectedComboboxValue.innerText || selectedComboboxValue.textContent)
+                : 'value' in element ? element.value || null : null;
 
             return {
               interaction_strategy: interactionStrategy,

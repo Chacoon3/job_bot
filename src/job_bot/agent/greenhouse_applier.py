@@ -50,8 +50,8 @@ def _has_correct_value(field: FormField, expected_value: object) -> bool:
             return regulator(actual_value) == regulator(str(expected_value))
         return str(actual_value).strip().casefold() == str(expected_value).strip().casefold()
 
-    actual_values: list[object] = [field.current_value]
     if field.interaction_strategy in {"select_native", "select_combobox"}:
+        actual_values: list[object] = [field.current_value]
         actual_values.extend(
             value
             for option in field.options
@@ -59,20 +59,40 @@ def _has_correct_value(field: FormField, expected_value: object) -> bool:
             for value in (option.label, option.value)
         )
 
-    regulator = get_dropdown_regulator_by_field_key(field.field_key)
-    for actual_value in actual_values:
-        if actual_value == expected_value:
+        regulator = get_dropdown_regulator_by_field_key(field.field_key)
+        if regulator:
+            expected_value = regulator(str(expected_value))
+            actual_values = [
+                regulator(value) if isinstance(value, str) else value for value in actual_values
+            ]
+
+        return any(
+            actual_value == expected_value
+            or (
+                isinstance(actual_value, str)
+                and actual_value.strip().casefold() == str(expected_value).strip().casefold()
+            )
+            or (
+                field.field_key == "city"
+                and isinstance(actual_value, str)
+                and actual_value.strip()
+                .casefold()
+                .startswith(f"{str(expected_value).strip().casefold()},")
+            )
+            for actual_value in actual_values
+        )
+
+    actual_value = field.current_value
+    if actual_value == expected_value:
+        return True
+    if isinstance(actual_value, str):
+        if field.field_key == "phone":
+            expected_phone = _canonicalize_phone_number(expected_value)
+            actual_phone = _canonicalize_phone_number(actual_value)
+            if expected_phone and actual_phone == expected_phone:
+                return True
+        if actual_value.strip().casefold() == str(expected_value).strip().casefold():
             return True
-        if isinstance(actual_value, str):
-            if field.field_key == "phone":
-                expected_phone = _canonicalize_phone_number(expected_value)
-                actual_phone = _canonicalize_phone_number(actual_value)
-                if expected_phone and actual_phone == expected_phone:
-                    return True
-            if regulator and regulator(actual_value) == regulator(str(expected_value)):
-                return True
-            if actual_value.strip().casefold() == str(expected_value).strip().casefold():
-                return True
 
     return False
 
@@ -90,7 +110,10 @@ class GreenHouseFiller(BaseApplier):
             field.role,
         )
         await expect(locator).to_be_visible(timeout=5000)
-        await fill_text_field(locator, value)
+        if field.field_key == "phone":
+            await fill_text_field(locator, value, canonicalizer=_canonicalize_phone_number)
+        else:
+            await fill_text_field(locator, value)
 
     async def select_native(self, field: FormField, value: str) -> None:
         dropdown_locator = locate_by_accessible_name(
@@ -125,11 +148,16 @@ class GreenHouseFiller(BaseApplier):
             field_value=value,
         )
 
+        query = value
+        if field.field_key == "city":
+            query = ", ".join(part for part in (value, self.user.state, self.user.country) if part)
+
         await select_dropdown_option(
             self.browser_session.page(),
             dropdown_locator,
             value,
             regulator=get_dropdown_regulator_by_field_key(field.field_key),
+            query=query,
         )
 
     async def select_radio(self, field: FormField, value: str) -> None:
