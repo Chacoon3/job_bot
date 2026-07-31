@@ -99,6 +99,7 @@ def test_status_qualified_matcher_aliases() -> None:
     "label",
     [
         "+1",
+        "+1 US",
         "US (+1)",
         "U.S. +1",
         "United States +1",
@@ -106,25 +107,26 @@ def test_status_qualified_matcher_aliases() -> None:
     ],
 )
 def test_phone_country_regulator_matches_us_calling_code_labels(label: str) -> None:
-    assert regulate_phone_country_code(label) == "phone_country:1"
+    assert regulate_phone_country_code(label) == "United States"
 
 
 @pytest.mark.parametrize(
     "label",
-    ["+44", "UK (+44)", "U.K. +44", "GB +44", "United Kingdom (+44)"],
+    ["+44", "+44 UK", "UK (+44)", "U.K. +44", "GB +44", "United Kingdom (+44)"],
 )
 def test_phone_country_regulator_matches_uk_calling_code_labels(label: str) -> None:
-    assert regulate_phone_country_code(label) == "phone_country:44"
+    assert regulate_phone_country_code(label) == "United Kingdom"
 
 
 @pytest.mark.parametrize(
     ("label", "expected"),
     [
-        ("US", "phone_country:1"),
-        ("United States", "phone_country:1"),
-        ("UK", "phone_country:44"),
-        ("United Kingdom", "phone_country:44"),
-        ("Unknown country", "raw:unknown country"),
+        ("US", "United States"),
+        ("United States", "United States"),
+        ("UK", "United Kingdom"),
+        ("United Kingdom", "United Kingdom"),
+        ("bosnia and herzegovina", "Bosnia and Herzegovina"),
+        ("UNKNOWN COUNTRY", "Unknown Country"),
     ],
 )
 def test_phone_country_regulator_handles_country_only_labels(

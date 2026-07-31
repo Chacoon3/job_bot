@@ -257,38 +257,62 @@ def regulate_race_ethnicity(label: str) -> str:
 
 
 _PHONE_COUNTRY_ALIASES: Mapping[str, str] = {
-    "gb": "+44",
-    "gbr": "+44",
-    "greatbritain": "+44",
-    "uk": "+44",
-    "unitedkingdom": "+44",
-    "us": "+1",
-    "usa": "+1",
-    "unitedstates": "+1",
-    "unitedstatesofamerica": "+1",
+    "gb": "United Kingdom",
+    "gbr": "United Kingdom",
+    "greatbritain": "United Kingdom",
+    "uk": "United Kingdom",
+    "unitedkingdom": "United Kingdom",
+    "us": "United States",
+    "usa": "United States",
+    "unitedstates": "United States",
+    "unitedstatesofamerica": "United States",
+}
+
+_PHONE_COUNTRY_CODE_DEFAULTS: Mapping[str, str] = {
+    "1": "United States",
+    "44": "United Kingdom",
 }
 
 
-def regulate_phone_country_code(label: str) -> str:
-    """Canonicalize a phone calling code with an optional country label.
+def _country_name_title(normalized_name: str) -> str:
+    """Format a normalized country name for display."""
+    words = normalized_name.split()
+    minor_words = {"and", "of", "the"}
+    return " ".join(
+        word if index > 0 and word in minor_words else word.capitalize()
+        for index, word in enumerate(words)
+    )
 
-    Phone dropdowns commonly render the same value as ``+1``, ``US (+1)``,
-    or ``United States +1``. Calling codes are at most three digits, so an
-    explicitly displayed code is a stable key regardless of the country-name
-    presentation. Country-only aliases are deliberately limited to common
-    U.S. and U.K. variants; unknown country names are not guessed.
+
+def regulate_phone_country_code(label: str) -> str:
+    """Return the standard country name represented by a phone option.
+
+    Phone dropdowns commonly render a country as ``+1 US``, ``US (+1)``, or
+    ``United States +1``. The dialing prefix is presentation detail: remove it,
+    expand known abbreviations, and normalize full country names to title form.
     """
     display_label = unicodedata.normalize("NFKC", label).casefold()
-    calling_code_match = re.search(r"\+\s*(\d{1,3})(?!\d)", display_label)
+    calling_code_match = re.search(r"\+\s*(\d+)", display_label)
+    country_label = re.sub(
+        r"\(?\+\s*\d+(?:[\s-]\d+)*\)?",
+        " ",
+        display_label,
+    )
+    normalized_country = normalize_dropdown_label(country_label)
+    compact_name = normalized_country.replace(" ", "")
+
+    if canonical_name := _PHONE_COUNTRY_ALIASES.get(compact_name):
+        return canonical_name
+
+    if normalized_country:
+        return _country_name_title(normalized_country)
+
     if calling_code_match:
-        return f"phone_country:{calling_code_match.group(1)}"
+        calling_code = calling_code_match.group(1)
+        if canonical_name := _PHONE_COUNTRY_CODE_DEFAULTS.get(calling_code):
+            return canonical_name
 
-    normalized = normalize_dropdown_label(label)
-    compact_name = normalized.replace(" ", "")
-    if calling_code := _PHONE_COUNTRY_ALIASES.get(compact_name):
-        return f"phone_country:{calling_code.removeprefix('+')}"
-
-    return f"raw:{normalized}"
+    return f"raw:{normalize_dropdown_label(label)}"
 
 
 COMMON_DROPDOWN_REGULATORS: Mapping[str, Regulator] = {
