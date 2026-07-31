@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 import inspect
 import pickle
 from collections.abc import Callable
 from functools import wraps
 from typing import Any, ParamSpec, TypeVar, cast, overload
+
+import redis
+from structlog import get_logger
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -39,9 +41,6 @@ class RedisCache:
 
         if not url:
             raise ValueError("A Redis URL is required when no client is provided")
-
-        # Lazy dynamic import so tests can inject a fake client without redis installed.
-        redis = importlib.import_module("redis")
 
         self._client = redis.Redis.from_url(
             url,
@@ -141,7 +140,12 @@ class RedisCache:
                     return cast(R, cached[1])
 
                 result = await cast(Any, func)(*args, **kwargs)
-                self._write_cache(key, result, ttl=effective_ttl)
+                try:
+                    self._write_cache(key, result, ttl=effective_ttl)
+                except Exception as e:
+                    get_logger().warning(
+                        "Failed to write to Redis cache", error=str(e), key=key, ttl=effective_ttl
+                    )
                 return cast(R, result)
 
             return cast(Callable[P, R], async_wrapper)
@@ -154,7 +158,12 @@ class RedisCache:
                 return cast(R, cached[1])
 
             result = func(*args, **kwargs)
-            self._write_cache(key, result, ttl=effective_ttl)
+            try:
+                self._write_cache(key, result, ttl=effective_ttl)
+            except Exception as e:
+                get_logger().warning(
+                    "Failed to write to Redis cache", error=str(e), key=key, ttl=effective_ttl
+                )
             return result
 
         return sync_wrapper
@@ -222,14 +231,11 @@ class RedisCache:
         if ttl is not None and ttl <= 0:
             return
 
-        try:
-            payload = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
-            qualified = self._qualified_key(key)
-            if ttl is None:
-                self._client.set(qualified, payload)
-                return
-
-            ttl_ms = max(1, int(ttl * 1000))
-            self._client.set(qualified, payload, px=ttl_ms)
-        except Exception:
+        payload = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+        qualified = self._qualified_key(key)
+        if ttl is None:
+            self._client.set(qualified, payload)
             return
+
+        ttl_ms = max(1, int(ttl * 1000))
+        self._client.set(qualified, payload, px=ttl_ms)
