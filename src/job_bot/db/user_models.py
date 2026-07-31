@@ -3,50 +3,38 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import (
-    BigInteger,
-    CheckConstraint,
-    DateTime,
-    Index,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-    Uuid,
-    text,
-)
+from sqlalchemy import CheckConstraint, DateTime, Index, String, Text, Uuid, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from job_bot.db.base import Base
 
 
-class CandidateProfileRecord(Base):
-    """An immutable, versioned snapshot of one candidate's profile."""
+class User(Base):
+    """The persisted representation of the Pydantic User domain model."""
 
-    __tablename__ = "candidate_profiles"
+    __tablename__ = "users"
     __table_args__ = (
-        CheckConstraint("version > 0", name="ck_candidate_profiles_version_positive"),
         CheckConstraint(
             "authorized_to_work IN ('yes', 'no', 'decline')",
-            name="ck_candidate_profiles_authorized_to_work",
+            name="ck_users_authorized_to_work",
         ),
         CheckConstraint(
             "requires_sponsorship IN ('yes', 'no', 'decline')",
-            name="ck_candidate_profiles_requires_sponsorship",
+            name="ck_users_requires_sponsorship",
         ),
         CheckConstraint(
             "willing_to_relocate IN ('yes', 'no', 'decline')",
-            name="ck_candidate_profiles_willing_to_relocate",
+            name="ck_users_willing_to_relocate",
         ),
         CheckConstraint(
             "gender IS NULL OR gender IN "
             "('male', 'female', 'nonbinary', 'self_describe', 'decline')",
-            name="ck_candidate_profiles_gender",
+            name="ck_users_gender",
         ),
         CheckConstraint(
             "is_hispanic_or_latino IN ('yes', 'no', 'decline')",
-            name="ck_candidate_profiles_is_hispanic_or_latino",
+            name="ck_users_is_hispanic_or_latino",
         ),
         CheckConstraint(
             "race IN ("
@@ -54,37 +42,25 @@ class CandidateProfileRecord(Base):
             "'hispanic_latino', 'native_hawaiian_pacific_islander', "
             "'white', 'two_or_more', 'other', 'decline'"
             ")",
-            name="ck_candidate_profiles_race",
+            name="ck_users_race",
         ),
         CheckConstraint(
             "disability_status IN ('yes', 'no', 'decline')",
-            name="ck_candidate_profiles_disability_status",
+            name="ck_users_disability_status",
         ),
         CheckConstraint(
             "veteran_status IN ('yes', 'no', 'decline')",
-            name="ck_candidate_profiles_veteran_status",
+            name="ck_users_veteran_status",
         ),
         CheckConstraint(
             "jsonb_typeof(education) = 'array'",
-            name="ck_candidate_profiles_education_array",
+            name="ck_users_education_array",
         ),
-        UniqueConstraint(
-            "candidate_id",
-            "version",
-            name="uq_candidate_profiles_candidate_version",
-        ),
-        Index(
-            "idx_candidate_profiles_candidate_version",
-            "candidate_id",
-            "version",
-        ),
-        Index("idx_candidate_profiles_created_at", "created_at"),
+        Index("idx_users_email", "email"),
+        Index("idx_users_created_at", "created_at"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    candidate_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
-    version: Mapped[int] = mapped_column(Integer, nullable=False)
-
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
     first_name: Mapped[str] = mapped_column(String(255), nullable=False)
     last_name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
@@ -96,7 +72,6 @@ class CandidateProfileRecord(Base):
     state: Mapped[str | None] = mapped_column(String(255))
     postal_code: Mapped[str | None] = mapped_column(String(32))
     country: Mapped[str | None] = mapped_column(String(255))
-
     linkedin_url: Mapped[str | None] = mapped_column(String(2048))
     github_url: Mapped[str | None] = mapped_column(String(2048))
     portfolio_url: Mapped[str | None] = mapped_column(String(2048))
@@ -115,7 +90,6 @@ class CandidateProfileRecord(Base):
     education: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
     resume_text: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
-
     resume_filename: Mapped[str] = mapped_column(String(512), nullable=False)
     resume_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -123,13 +97,10 @@ class CandidateProfileRecord(Base):
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=text("CURRENT_TIMESTAMP"),
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-Index(
-    "idx_candidate_profiles_email_latest_active",
-    CandidateProfileRecord.email,
-    CandidateProfileRecord.created_at.desc(),
-    CandidateProfileRecord.id.desc(),
-    postgresql_where=CandidateProfileRecord.deleted_at.is_(None),
-)

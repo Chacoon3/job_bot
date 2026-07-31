@@ -4,23 +4,24 @@ from langchain.chat_models import BaseChatModel
 from langchain.messages import HumanMessage, SystemMessage
 
 from job_bot.llm import OpenAILLMProvider
-from job_bot.schemas import CandidateProfile
+from job_bot.schemas import User
 
 
 @cache
 def get_parser_model() -> BaseChatModel:
     model = OpenAILLMProvider().get_model()
-    return model.with_structured_output(CandidateProfile)
+    return model.with_structured_output(User)
 
 
 _PARSE_PROMPT = f"""
 You are a resume parser. Extract the following information from the resume:
-{", ".join(CandidateProfile.model_fields.keys())}
-The "summary" field should be a concise summary of the candidate's qualifications and experience, highlighting their key skills and achievements.
+{", ".join(User.model_fields.keys())}
+The "summary" field should concisely describe the user's qualifications and
+experience, highlighting key skills and achievements.
 """
 
 
-def ai_parse_resume(resume: str) -> CandidateProfile:
+def ai_parse_resume(resume: str) -> User:
     """
     Parse a resume file and extract candidate information.
 
@@ -28,7 +29,7 @@ def ai_parse_resume(resume: str) -> CandidateProfile:
         resume (str): The resume file content as a string.
 
     Returns:
-        CandidateProfile: The extracted candidate profile.
+        User: The extracted user profile.
     """
     model = get_parser_model()
     res = model.invoke([SystemMessage(content=f"{_PARSE_PROMPT}"), HumanMessage(content=resume)])

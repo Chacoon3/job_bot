@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from job_bot.llm import OpenAILLMProvider
 from job_bot.openai_client import get_openai_client
-from job_bot.schemas import ApplicationStatus, CandidateProfile, JobEntrySchema
+from job_bot.schemas import ApplicationStatus, JobEntrySchema, User
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 
 logger = structlog.get_logger(__name__)
@@ -139,7 +139,7 @@ def find_jobs(query: JobQuery) -> list[JobEntrySchema]:
     return list(structured.jobs)
 
 
-async def apply_job(job_url: str, candidate: CandidateProfile) -> dict[str, object]:
+async def apply_job(job_url: str, candidate: User) -> dict[str, object]:
     """Run one browser-agent application attempt in an isolated browser context."""
     async with async_playwright() as playwright:
         session = BrowserSession(playwright=playwright, headless=False)
@@ -180,9 +180,9 @@ async def apply_job(job_url: str, candidate: CandidateProfile) -> dict[str, obje
 
             prompt = (
                 f"Open and apply to the job at {job_url}.\n\n"
-                "Candidate profile:\n"
+                "User profile:\n"
                 f"{candidate.model_dump_json(indent=2)}\n\n"
-                "Fill the application form using the candidate profile. Upload a resume "
+                "Fill the application form using the user profile. Upload a resume "
                 "only when a valid local resume file path is explicitly available in the "
                 "profile or task context. Review the completed form before submitting."
             )
@@ -193,7 +193,7 @@ async def apply_job(job_url: str, candidate: CandidateProfile) -> dict[str, obje
             await session.stop()
 
 
-async def apply_jobs(query: JobQuery, candidate: CandidateProfile) -> list[ApplicationStatus]:
+async def apply_jobs(query: JobQuery, candidate: User) -> list[ApplicationStatus]:
     jobs = find_jobs(query)
     status: list[ApplicationStatus] = []
     for job in jobs:

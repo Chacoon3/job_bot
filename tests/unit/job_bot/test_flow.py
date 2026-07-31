@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 
 from job_bot.applier.flow import apply_job
-from job_bot.schemas import CandidateProfile, EducationDegree, JobEntrySchema
+from job_bot.schemas import EducationDegree, JobEntrySchema, User
 
 
 class FakeAsyncPlaywrightContext:
@@ -81,7 +81,7 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
         pay_range_minimum=120000,
         pay_range_maximum=160000,
     )
-    candidate = CandidateProfile(
+    candidate = User(
         first_name="Alex",
         last_name="Doe",
         email="alex@example.com",
@@ -122,6 +122,6 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
     assert fake_agent.payload is not None
     message = fake_agent.payload["messages"][0]
     assert "Open and apply to the job at https://example.com/jobs/123" in message.content
-    assert "Candidate profile:" in message.content
+    assert "User profile:" in message.content
     assert '"first_name": "Alex"' in message.content
     assert '"last_name": "Doe"' in message.content

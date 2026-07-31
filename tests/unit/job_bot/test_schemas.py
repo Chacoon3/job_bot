@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import Range
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import JobEntry
-from job_bot.schemas import CandidateProfile, GreenhouseBoardSchema, JobEntrySchema
+from job_bot.schemas import GreenhouseBoardSchema, JobEntrySchema, User
 
 
 def test_job_entry_schema_round_trips_orm_ranges() -> None:
@@ -60,8 +60,8 @@ def test_greenhouse_board_schema_reads_orm_attributes() -> None:
     )
 
 
-def test_candidate_profile_uses_canonical_dropdown_options() -> None:
-    profile = CandidateProfile(
+def test_user_uses_canonical_dropdown_options() -> None:
+    profile = User(
         first_name="Alex",
         last_name="Doe",
         email="alex@example.com",
@@ -80,9 +80,9 @@ def test_candidate_profile_uses_canonical_dropdown_options() -> None:
     assert profile.veteran_status == "no"
 
 
-def test_candidate_profile_rejects_noncanonical_dropdown_option() -> None:
+def test_user_rejects_noncanonical_dropdown_option() -> None:
     with pytest.raises(ValidationError):
-        CandidateProfile(
+        User(
             first_name="Alex",
             last_name="Doe",
             email="alex@example.com",
@@ -95,8 +95,8 @@ def test_candidate_profile_rejects_noncanonical_dropdown_option() -> None:
         )
 
 
-def test_candidate_profile_validates_and_normalizes_email() -> None:
-    profile = CandidateProfile(
+def test_user_validates_and_normalizes_email() -> None:
+    profile = User(
         first_name="Alex",
         last_name="Doe",
         email="  Alex.Doe@EXAMPLE.COM ",
@@ -110,9 +110,9 @@ def test_candidate_profile_validates_and_normalizes_email() -> None:
     assert profile.email == "alex.doe@example.com"
 
 
-def test_candidate_profile_rejects_invalid_email() -> None:
+def test_user_rejects_invalid_email() -> None:
     with pytest.raises(ValidationError):
-        CandidateProfile(
+        User(
             first_name="Alex",
             last_name="Doe",
             email="not-an-email",

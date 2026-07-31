@@ -19,7 +19,7 @@ from structlog import get_logger
 
 from job_bot.agent.filler import GreenHouseFiller
 from job_bot.openai_client import get_async_openai_client
-from job_bot.schemas import CandidateProfile, FormField
+from job_bot.schemas import FormField, User
 from job_bot.utils.browser_tools import BrowserSession
 from job_bot.utils.caching import AppDiskCache
 from job_bot.utils.decorators import log_upon_exit
@@ -36,7 +36,7 @@ class _AgentState(BaseModel):
     job_url: str
     action_count: Annotated[int, add] = 0
     consecutive_failures: Annotated[int, add] = 0
-    profile: CandidateProfile | None = None
+    profile: User | None = None
     resume_file: UploadableFile | None = None
     form_fields: list[FormField] | None = None
 

@@ -8,7 +8,7 @@ from job_bot.agent.planned_applier import agent_flow
 from job_bot.agent.react_applier import apply_for_job
 from job_bot.db.app_redis import AppRedisAsync
 from job_bot.llm import OpenAILLMProvider
-from job_bot.schemas import CandidateProfile
+from job_bot.schemas import User
 from job_bot.utils.file_upload import extract_uploadable_file, parse_pure_text_pdf
 from job_bot.utils.resume_parser import ai_parse_resume
 
@@ -40,7 +40,7 @@ async def api_apply(request: Request):
     # check if the content has been processed before in redis
     profile_json = await AppRedisAsync.get(profile_hash_key)
     if profile_json:
-        profile = CandidateProfile.model_validate_json(profile_json)
+        profile = User.model_validate_json(profile_json)
     else:
         if uploadable.filename.endswith(".pdf"):
             resume_str = parse_pure_text_pdf(content)

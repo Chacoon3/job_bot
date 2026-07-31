@@ -19,7 +19,7 @@ from job_bot.db.job_models import JobEntry
 from job_bot.db.upsert import batched_upsert
 from job_bot.job_providers.llm_job_provider import LLMJobProvider
 from job_bot.llm import OpenAILLMProvider
-from job_bot.schemas import CandidateProfile, JobEntrySchema
+from job_bot.schemas import JobEntrySchema, User
 from job_bot.utils.file_upload import parse_pure_text_pdf
 from job_bot.utils.resume_parser import ai_parse_resume
 
@@ -106,8 +106,8 @@ def api_find_jobs() -> list[JobEntrySchema]:
     return jobs
 
 
-@router.post("/candidate_profile")
-async def candidate_profile(request: Request) -> dict[str, str]:
+@router.post("/user")
+async def user(request: Request) -> dict[str, str]:
     form = await request.form()
     uploaded_file = form.get("file")
 
@@ -122,8 +122,8 @@ async def candidate_profile(request: Request) -> dict[str, str]:
     # Read file content
     content = await uploaded_file.read()
 
-    # Convert to string and generate candidate profile
-    profile = CandidateProfile.from_document(content, filename)
+    # Convert to string and generate a user profile.
+    profile = User.from_document(content, filename)
 
     return {"profile": str(profile)}
 
@@ -151,7 +151,7 @@ async def api_apply(request: Request) -> ApplicationStatus:
     # check if the content has been processed before in redis
     profile_json = await AppRedisAsync.get(profile_hash_key)
     if profile_json:
-        profile = CandidateProfile.model_validate_json(profile_json)
+        profile = User.model_validate_json(profile_json)
     else:
         if filename.endswith(".pdf"):
             resume_str = parse_pure_text_pdf(content)
@@ -201,7 +201,7 @@ async def api_apply_jobs(request: Request) -> list[ApplicationStatus]:
     # check if the content has been processed before in redis
     profile_json = await AppRedisAsync.get(profile_hash_key)
     if profile_json:
-        profile = CandidateProfile.model_validate_json(profile_json)
+        profile = User.model_validate_json(profile_json)
     else:
         if filename.endswith(".pdf"):
             resume_str = parse_pure_text_pdf(content)

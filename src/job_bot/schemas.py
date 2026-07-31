@@ -177,7 +177,9 @@ RaceEthnicityOption = Literal[
 ]
 
 
-class CandidateProfile(BaseModel):
+class User(BaseModel):
+    """All application and identity information owned by a user."""
+
     first_name: str
     last_name: str
     email: EmailStr
@@ -195,6 +197,12 @@ class CandidateProfile(BaseModel):
     portfolio_url: str | None = None
     website_url: str | None = None
 
+    @field_validator("email", mode="after")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        """Store a canonical, case-insensitive email identity."""
+        return str(value).casefold()
+
     authorized_to_work: YesNoOption = "yes"
     requires_sponsorship: YesNoOption = "yes"
     visa_status: str | None = None
@@ -210,14 +218,8 @@ class CandidateProfile(BaseModel):
     resume_text: str
     summary: str
 
-    @field_validator("email", mode="after")
-    @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
-        """Store a canonical, case-insensitive email identity."""
-        return str(value).casefold()
-
     def to_prompt_text(self) -> str:
-        """Convert the candidate profile to a prompt text for LLMs."""
+        """Convert the user to prompt text for LLMs."""
 
         education_str = "\n".join(
             [
@@ -244,12 +246,12 @@ class CandidateProfile(BaseModel):
         return getattr(self, field_key, None)
 
 
-class CandidateProfileVersion(BaseModel):
-    candidate_id: UUID
-    version: int = Field(ge=1)
-    profile: CandidateProfile
+class UserResponse(BaseModel):
+    user_id: UUID
+    user: User
     resume_filename: str
     created_at: datetime
+    updated_at: datetime
     deleted_at: datetime | None = None
 
 

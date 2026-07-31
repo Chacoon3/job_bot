@@ -17,7 +17,7 @@ from structlog import get_logger
 from job_bot.adt import JobAgentContext
 from job_bot.agent.prompts import JOB_APPSYS_MSG_TEXT
 from job_bot.llm import LLMProvider
-from job_bot.schemas import CandidateProfile
+from job_bot.schemas import User
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 from job_bot.utils.decorators import log_upon_exit
 from job_bot.utils.file_upload import UploadableFile
@@ -47,7 +47,7 @@ class JobAppState(BaseModel):
     action_count: int = 0
     consecutive_failures: int = 0
     evaluation: ApplicationEvaluation | None = None
-    profile: CandidateProfile | None = None
+    profile: User | None = None
 
 
 @log_upon_exit
@@ -242,7 +242,7 @@ def build_applier_agent() -> CompiledStateGraph:
 
 async def apply_for_job(
     job_url: str,
-    profile: CandidateProfile,
+    profile: User,
     resume: UploadableFile,
     model_provider: LLMProvider,
 ):
