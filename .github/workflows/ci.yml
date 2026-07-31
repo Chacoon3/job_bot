@@ -146,6 +146,7 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: src
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::The DATABASE_URL GitHub Actions secret is not configured"
