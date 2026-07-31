@@ -13,6 +13,7 @@ from job_bot.agent.dropdown_regulator import (
     match_veteran_option,
     match_veteran_status_option,
     match_yes_no_option,
+    regulate_country,
     regulate_phone_country_code,
 )
 from job_bot.schemas import (
@@ -151,3 +152,32 @@ def test_phone_country_regulator_matches_code_to_abbreviated_dropdown_label() ->
         )
         is expected
     )
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("usa", "United States"),
+        ("U.S.A.", "United States"),
+        ("UK", "United Kingdom"),
+        ("u a e", "United Arab Emirates"),
+        ("KOR", "South Korea"),
+        ("bosnia AND herzegovina", "Bosnia and Herzegovina"),
+        ("  NEW   ZEALAND  ", "New Zealand"),
+    ],
+)
+def test_country_regulator_returns_full_title_case_name(label: str, expected: str) -> None:
+    assert regulate_country(label) == expected
+
+
+def test_country_regulator_matches_abbreviation_to_full_dropdown_label() -> None:
+    expected = Option("United Arab Emirates")
+
+    assert (
+        match_regulated_option([Option("United States"), expected], "UAE", regulate_country)
+        is expected
+    )
+
+
+def test_country_field_uses_country_regulator() -> None:
+    assert get_dropdown_regulator_by_field_key("country") is regulate_country

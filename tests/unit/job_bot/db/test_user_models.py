@@ -20,6 +20,7 @@ def test_users_table_matches_the_pydantic_user_model() -> None:
     assert "id UUID NOT NULL" in ddl
     assert "first_name VARCHAR(255) NOT NULL" in ddl
     assert "email VARCHAR(320) NOT NULL" in ddl
+    assert "phone_country VARCHAR(255) NOT NULL" in ddl
     assert "authorized_to_work VARCHAR(16) NOT NULL" in ddl
     assert "education JSONB NOT NULL" in ddl
     assert "resume_text TEXT NOT NULL" in ddl

@@ -73,7 +73,7 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String(255), nullable=False)
     last_name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
-    phone_country: Mapped[str] = mapped_column(String(16), nullable=False)
+    phone_country: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str] = mapped_column(String(64), nullable=False)
     address_line_1: Mapped[str | None] = mapped_column(String(512))
     address_line_2: Mapped[str | None] = mapped_column(String(512))

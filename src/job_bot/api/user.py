@@ -48,7 +48,7 @@ USER_EXTRACTION_INSTRUCTIONS = (
 class UserSupplement(BaseModel):
     """Answers that generally cannot be safely inferred from a resume."""
 
-    phone_country: str | None = Field(default=None, min_length=1, max_length=16)
+    phone_country: str | None = Field(default=None, min_length=1, max_length=255)
     address_line_1: str | None = Field(default=None, max_length=512)
     address_line_2: str | None = Field(default=None, max_length=512)
     city: str | None = Field(default=None, max_length=255)
@@ -82,7 +82,7 @@ def _supplement_from_form(
     willing_to_relocate: Annotated[YesNoOption, Form()],
     phone_country: Annotated[
         str | None,
-        Form(min_length=1, max_length=16),
+        Form(min_length=1, max_length=255),
     ] = None,
     address_line_1: Annotated[str | None, Form(max_length=512)] = None,
     address_line_2: Annotated[str | None, Form(max_length=512)] = None,

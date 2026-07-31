@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy.dialects.postgresql import Range
 
+from job_bot.countries import regulate_country, regulate_phone_country_code
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import JobEntry
 
@@ -183,14 +184,14 @@ class User(BaseModel):
     first_name: str
     last_name: str
     email: EmailStr
-    phone_country: str
+    phone_country: str = Field(min_length=1, max_length=255)
     phone: str
     address_line_1: str | None = None
     address_line_2: str | None = None
     city: str | None = None
     state: str | None = None
     postal_code: str | None = None
-    country: str | None = None
+    country: str | None = Field(default=None, max_length=255)
 
     linkedin_url: str | None = None
     github_url: str | None = None
@@ -202,6 +203,26 @@ class User(BaseModel):
     def normalize_email(cls, value: EmailStr) -> str:
         """Store a canonical, case-insensitive email identity."""
         return str(value).casefold()
+
+    @field_validator("phone_country", mode="before")
+    @classmethod
+    def normalize_phone_country(cls, value: str) -> str:
+        """Store phone-country inputs as canonical full country names."""
+        canonical = regulate_phone_country_code(value)
+        if canonical.startswith("raw:"):
+            raise ValueError("phone_country must identify a country")
+        return canonical
+
+    @field_validator("country", mode="before")
+    @classmethod
+    def normalize_country(cls, value: str | None) -> str | None:
+        """Store address-country inputs as canonical full country names."""
+        if value is None:
+            return None
+        canonical = regulate_country(value)
+        if canonical.startswith("raw:"):
+            raise ValueError("country must identify a country")
+        return canonical
 
     authorized_to_work: YesNoOption = "yes"
     requires_sponsorship: YesNoOption = "yes"
@@ -231,7 +252,7 @@ class User(BaseModel):
         return (
             f"Name: {self.first_name} {self.last_name}\n"
             f"Email: {self.email}\n"
-            f"Phone Country Code: {self.phone_country}\n"
+            f"Phone Country: {self.phone_country}\n"
             f"Phone: {self.phone}\n"
             f"LinkedIn: {self.linkedin_url}\n"
             f"GitHub: {self.github_url}\n"

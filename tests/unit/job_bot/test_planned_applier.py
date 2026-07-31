@@ -71,12 +71,15 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
     field = _form_field()
     navigation_response = object()
     page = SimpleNamespace(goto=AsyncMock(return_value=navigation_response))
-    filler = SimpleNamespace(fill=AsyncMock())
+    filler = SimpleNamespace(fill_fields=AsyncMock())
+    user = SimpleNamespace()
+    browser_sessions = []
 
     class FakeBrowserSession:
         def __init__(self, playwright: object, headless: bool) -> None:
             self.playwright = playwright
             self.headless = headless
+            browser_sessions.append(self)
 
         async def __aenter__(self):
             return self
@@ -94,11 +97,12 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
     monkeypatch.setattr("job_bot.agent.planned_applier.GreenHouseFiller", filler_factory)
     monkeypatch.setattr("job_bot.agent.planned_applier.asyncio.sleep", AsyncMock())
 
-    asyncio.run(agent_flow("https://example.com/apply", SimpleNamespace()))
+    playwright = SimpleNamespace()
+    asyncio.run(agent_flow("https://example.com/apply", playwright, user))
 
     page.goto.assert_awaited_once_with(
         "https://example.com/apply",
         wait_until="domcontentloaded",
     )
-    filler_factory.assert_called_once()
-    filler.fill.assert_awaited_once_with(field, "test_value")
+    filler_factory.assert_called_once_with(browser_sessions[0], user)
+    filler.fill_fields.assert_awaited_once_with([field])

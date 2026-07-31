@@ -110,6 +110,50 @@ def test_user_validates_and_normalizes_email() -> None:
     assert profile.email == "alex.doe@example.com"
 
 
+@pytest.mark.parametrize(
+    ("phone_country", "country", "expected_phone_country", "expected_country"),
+    [
+        ("+1", "u.s.a.", "United States", "United States"),
+        ("UK (+44)", "bosnia AND herzegovina", "United Kingdom", "Bosnia and Herzegovina"),
+        ("+971", "u a e", "United Arab Emirates", "United Arab Emirates"),
+    ],
+)
+def test_user_normalizes_country_fields(
+    phone_country: str,
+    country: str,
+    expected_phone_country: str,
+    expected_country: str,
+) -> None:
+    profile = User(
+        first_name="Alex",
+        last_name="Doe",
+        email="alex@example.com",
+        phone_country=phone_country,
+        phone="555-0100",
+        country=country,
+        education=[],
+        resume_text="Software engineer",
+        summary="Backend engineer",
+    )
+
+    assert profile.phone_country == expected_phone_country
+    assert profile.country == expected_country
+
+
+def test_user_rejects_unknown_phone_calling_code() -> None:
+    with pytest.raises(ValidationError, match="phone_country must identify a country"):
+        User(
+            first_name="Alex",
+            last_name="Doe",
+            email="alex@example.com",
+            phone_country="+999",
+            phone="555-0100",
+            education=[],
+            resume_text="Software engineer",
+            summary="Backend engineer",
+        )
+
+
 def test_user_rejects_invalid_email() -> None:
     with pytest.raises(ValidationError):
         User(

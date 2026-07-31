@@ -14,6 +14,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
+from job_bot.countries import regulate_country, regulate_phone_country_code
 from job_bot.schemas import (
     DisabilityOption,
     DisabilityStatusOption,
@@ -256,71 +257,13 @@ def regulate_race_ethnicity(label: str) -> str:
     return _regulate(label, _RACE_RULES)
 
 
-_PHONE_COUNTRY_ALIASES: Mapping[str, str] = {
-    "gb": "United Kingdom",
-    "gbr": "United Kingdom",
-    "greatbritain": "United Kingdom",
-    "uk": "United Kingdom",
-    "unitedkingdom": "United Kingdom",
-    "us": "United States",
-    "usa": "United States",
-    "unitedstates": "United States",
-    "unitedstatesofamerica": "United States",
-}
-
-_PHONE_COUNTRY_CODE_DEFAULTS: Mapping[str, str] = {
-    "1": "United States",
-    "44": "United Kingdom",
-}
-
-
-def _country_name_title(normalized_name: str) -> str:
-    """Format a normalized country name for display."""
-    words = normalized_name.split()
-    minor_words = {"and", "of", "the"}
-    return " ".join(
-        word if index > 0 and word in minor_words else word.capitalize()
-        for index, word in enumerate(words)
-    )
-
-
-def regulate_phone_country_code(label: str) -> str:
-    """Return the standard country name represented by a phone option.
-
-    Phone dropdowns commonly render a country as ``+1 US``, ``US (+1)``, or
-    ``United States +1``. The dialing prefix is presentation detail: remove it,
-    expand known abbreviations, and normalize full country names to title form.
-    """
-    display_label = unicodedata.normalize("NFKC", label).casefold()
-    calling_code_match = re.search(r"\+\s*(\d+)", display_label)
-    country_label = re.sub(
-        r"\(?\+\s*\d+(?:[\s-]\d+)*\)?",
-        " ",
-        display_label,
-    )
-    normalized_country = normalize_dropdown_label(country_label)
-    compact_name = normalized_country.replace(" ", "")
-
-    if canonical_name := _PHONE_COUNTRY_ALIASES.get(compact_name):
-        return canonical_name
-
-    if normalized_country:
-        return _country_name_title(normalized_country)
-
-    if calling_code_match:
-        calling_code = calling_code_match.group(1)
-        if canonical_name := _PHONE_COUNTRY_CODE_DEFAULTS.get(calling_code):
-            return canonical_name
-
-    return f"raw:{normalize_dropdown_label(label)}"
-
-
 COMMON_DROPDOWN_REGULATORS: Mapping[str, Regulator] = {
     "yes_no": regulate_yes_no,
     "veteran": regulate_veteran_status,
     "gender": regulate_gender,
     "race_ethnicity": regulate_race_ethnicity,
     "disability": regulate_disability_status,
+    "country": regulate_country,
     "phone_country": regulate_phone_country_code,
 }
 
@@ -458,7 +401,9 @@ def match_race_ethnicity_option(
 
 def get_dropdown_regulator_by_field_key(field_key: JobFormFieldKey) -> Callable[[str], str] | None:
     """Return a regulator function for a given field key, if applicable."""
-    if field_key == "phone_country":
+    if field_key == "country":
+        return regulate_country
+    elif field_key == "phone_country":
         return regulate_phone_country_code
     elif field_key == "willing_to_relocate":
         return regulate_yes_no
