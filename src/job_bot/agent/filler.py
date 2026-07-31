@@ -20,13 +20,13 @@ class BaseApplier(ABC):
         self,
         browser_session: BrowserSession,
         user: User,
-        page_inspection: list[PageInspection],
+        page_inspections: list[PageInspection],
         file_set: ApplicationFileSet | None = None,
     ) -> None:
         self.browser_session = browser_session
         self.user = user
         self.file_set = file_set
-        self.page_inspection = page_inspection
+        self.page_inspection = page_inspections
 
     @abstractmethod
     async def fill(self, field: FormField, value: str) -> None: ...
