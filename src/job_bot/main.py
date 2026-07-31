@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from job_bot.api.api_v1 import router
 from job_bot.api.api_v2 import router as routerv2
+from job_bot.api.candidate_profile import router as candidate_profile_router
 from job_bot.api.greenhouse_api import router as greenhouse_router
 from job_bot.logging import configure_logging
 from job_bot.middleware import register_middleware
@@ -16,6 +17,7 @@ register_middleware(app)
 app.include_router(router)
 app.include_router(greenhouse_router)
 app.include_router(routerv2)
+app.include_router(candidate_profile_router)
 
 
 def main() -> None:

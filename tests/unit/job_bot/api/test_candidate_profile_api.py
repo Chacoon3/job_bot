@@ -1,17 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI
+import pytest
 from fastapi.testclient import TestClient
 
 from job_bot.api import candidate_profile, dependencies
+from job_bot.main import app
 from job_bot.schemas import CandidateProfile
-
-app = FastAPI()
-app.include_router(candidate_profile.router)
 
 
 class DummySession:
@@ -52,6 +52,134 @@ def _record(
         resume_filename="resume.pdf",
         created_at=datetime(2026, 7, 30, tzinfo=UTC),
         deleted_at=deleted_at,
+    )
+
+
+def _supplement() -> candidate_profile.CandidateProfileSupplement:
+    return candidate_profile.CandidateProfileSupplement(
+        phone_country="+1",
+        authorized_to_work="yes",
+        requires_sponsorship="no",
+        willing_to_relocate="no",
+        race="decline",
+    )
+
+
+def test_extract_candidate_profile_uploads_resume_and_parses_structured_output(
+    monkeypatch,
+) -> None:
+    client = Mock()
+    client.files.create = AsyncMock(return_value=SimpleNamespace(id="file-resume"))
+    client.files.delete = AsyncMock()
+    client.responses.parse = AsyncMock(return_value=SimpleNamespace(output_parsed=_profile()))
+    monkeypatch.setenv("JOB_BOT_LLM_MODEL", "test-model")
+    monkeypatch.setattr(candidate_profile, "get_async_openai_client", lambda: client)
+
+    result = asyncio.run(
+        candidate_profile._extract_candidate_profile.__wrapped__(
+            b"resume bytes",
+            "resume.pdf",
+            _supplement(),
+        )
+    )
+
+    assert result.requires_sponsorship == "no"
+    assert result.willing_to_relocate == "no"
+    client.files.create.assert_awaited_once_with(
+        file=("resume.pdf", b"resume bytes"),
+        purpose="user_data",
+        expires_after={"anchor": "created_at", "seconds": 1800},
+    )
+    request = client.responses.parse.await_args.kwargs
+    assert request["model"] == "test-model"
+    assert request["text_format"] is CandidateProfile
+    assert request["input"][0]["content"][0] == {
+        "type": "input_file",
+        "file_id": "file-resume",
+    }
+    assert '"requires_sponsorship": "no"' in request["input"][0]["content"][1]["text"]
+    client.files.delete.assert_awaited_once_with("file-resume")
+
+
+def test_extract_candidate_profile_deletes_upload_when_parsing_fails(
+    monkeypatch,
+) -> None:
+    client = Mock()
+    client.files.create = AsyncMock(return_value=SimpleNamespace(id="file-resume"))
+    client.files.delete = AsyncMock()
+    client.responses.parse = AsyncMock(return_value=SimpleNamespace(output_parsed=None))
+    monkeypatch.setenv("JOB_BOT_LLM_MODEL", "test-model")
+    monkeypatch.setattr(candidate_profile, "get_async_openai_client", lambda: client)
+
+    with pytest.raises(RuntimeError, match="did not return a parsed CandidateProfile"):
+        asyncio.run(
+            candidate_profile._extract_candidate_profile.__wrapped__(
+                b"resume bytes",
+                "resume.pdf",
+                _supplement(),
+            )
+        )
+
+    client.files.delete.assert_awaited_once_with("file-resume")
+
+
+def test_candidate_profile_cache_key_covers_every_extraction_input(monkeypatch) -> None:
+    monkeypatch.setenv("JOB_BOT_LLM_MODEL", "model-a")
+    function = candidate_profile._extract_candidate_profile.__wrapped__
+    supplement = _supplement()
+
+    base = candidate_profile._candidate_profile_cache_key(
+        function,
+        (b"resume bytes", "resume.pdf", supplement),
+        {},
+    )
+    equivalent = candidate_profile._candidate_profile_cache_key(
+        function,
+        (),
+        {
+            "resume_content": b"resume bytes",
+            "filename": "../resume.pdf",
+            "profile_supplement": supplement.model_copy(),
+        },
+    )
+    changed_resume = candidate_profile._candidate_profile_cache_key(
+        function,
+        (b"different resume", "resume.pdf", supplement),
+        {},
+    )
+    changed_filename = candidate_profile._candidate_profile_cache_key(
+        function,
+        (b"resume bytes", "resume.docx", supplement),
+        {},
+    )
+    changed_supplement = candidate_profile._candidate_profile_cache_key(
+        function,
+        (
+            b"resume bytes",
+            "resume.pdf",
+            supplement.model_copy(update={"visa_status": "H-1B"}),
+        ),
+        {},
+    )
+    monkeypatch.setenv("JOB_BOT_LLM_MODEL", "model-b")
+    changed_model = candidate_profile._candidate_profile_cache_key(
+        function,
+        (b"resume bytes", "resume.pdf", supplement),
+        {},
+    )
+
+    assert equivalent == base
+    assert (
+        len(
+            {
+                base,
+                changed_resume,
+                changed_filename,
+                changed_supplement,
+                changed_model,
+            }
+        )
+        == 5
     )
 
 
@@ -112,7 +240,20 @@ def test_upload_candidate_profile_merges_form_answers_and_creates_version(
         return record
 
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(candidate_profile, "_extract_candidate_profile", lambda *_args: _profile())
+    monkeypatch.setattr(
+        candidate_profile,
+        "_extract_candidate_profile",
+        AsyncMock(
+            return_value=_profile().model_copy(
+                update={
+                    "requires_sponsorship": "no",
+                    "willing_to_relocate": "no",
+                    "gender": "decline",
+                    "race": "decline",
+                }
+            )
+        ),
+    )
     monkeypatch.setattr(candidate_profile, "create_profile_version", fake_create)
 
     response = TestClient(app).put(
@@ -136,6 +277,54 @@ def test_upload_candidate_profile_merges_form_answers_and_creates_version(
     assert payload["resume_filename"] == "resume.pdf"
     assert captured["candidate_id"] == candidate_id
     assert len(captured["resume_sha256"]) == 64
+    assert session.committed is True
+
+
+def test_upload_new_candidate_profile_assigns_candidate_id(monkeypatch) -> None:
+    generated_candidate_id = uuid4()
+    session = DummySession()
+    captured: dict[str, object] = {}
+
+    def fake_create(received_session, **kwargs):
+        captured.update(session=received_session, **kwargs)
+        record = _record(kwargs["candidate_id"])
+        for field_name, value in kwargs["profile"].model_dump(mode="json").items():
+            setattr(record, field_name, value)
+        record.resume_filename = kwargs["resume_filename"]
+        return record
+
+    app.dependency_overrides[dependencies.get_session] = lambda: session
+    monkeypatch.setattr(candidate_profile, "uuid4", lambda: generated_candidate_id)
+    monkeypatch.setattr(
+        candidate_profile,
+        "_extract_candidate_profile",
+        AsyncMock(
+            return_value=_profile().model_copy(
+                update={
+                    "requires_sponsorship": "no",
+                    "willing_to_relocate": "yes",
+                }
+            )
+        ),
+    )
+    monkeypatch.setattr(candidate_profile, "create_profile_version", fake_create)
+
+    response = TestClient(app).post(
+        "/apiv1/candidate_profile",
+        data={
+            "authorized_to_work": "yes",
+            "requires_sponsorship": "no",
+            "willing_to_relocate": "yes",
+        },
+        files={"resume": ("resume.pdf", b"resume bytes", "application/pdf")},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    assert response.json()["candidate_id"] == str(generated_candidate_id)
+    assert response.json()["version"] == 1
+    assert captured["candidate_id"] == generated_candidate_id
     assert session.committed is True
 
 
