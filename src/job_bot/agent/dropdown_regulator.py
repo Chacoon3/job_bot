@@ -12,7 +12,17 @@ import re
 import unicodedata
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol, TypeVar
+from typing import Protocol, TypeVar
+
+from job_bot.schemas import (
+    DisabilityOption,
+    DisabilityStatusOption,
+    GenderOption,
+    RaceEthnicityOption,
+    VeteranOption,
+    VeteranStatusOption,
+    YesNoOption,
+)
 
 
 class HasLabel(Protocol):
@@ -21,24 +31,6 @@ class HasLabel(Protocol):
 
 OptionT = TypeVar("OptionT", bound=HasLabel)
 Regulator = Callable[[str], str]
-
-YesNoOption = Literal["yes", "no", "decline"]
-VeteranOption = Literal["yes", "no", "decline"]
-DisabilityOption = Literal["yes", "no", "decline"]
-VeteranStatusOption = VeteranOption
-DisabilityStatusOption = DisabilityOption
-GenderOption = Literal["male", "female", "nonbinary", "self_describe", "decline"]
-RaceEthnicityOption = Literal[
-    "american_indian_alaska_native",
-    "asian",
-    "black",
-    "hispanic_latino",
-    "native_hawaiian_pacific_islander",
-    "white",
-    "two_or_more",
-    "other",
-    "decline",
-]
 
 
 def normalize_dropdown_label(label: str) -> str:

@@ -4,13 +4,6 @@ from typing import get_args
 import pytest
 
 from job_bot.agent.dropdown_regulator import (
-    DisabilityOption,
-    DisabilityStatusOption,
-    GenderOption,
-    RaceEthnicityOption,
-    VeteranOption,
-    VeteranStatusOption,
-    YesNoOption,
     match_disability_option,
     match_disability_status_option,
     match_gender_option,
@@ -18,6 +11,15 @@ from job_bot.agent.dropdown_regulator import (
     match_veteran_option,
     match_veteran_status_option,
     match_yes_no_option,
+)
+from job_bot.schemas import (
+    DisabilityOption,
+    DisabilityStatusOption,
+    GenderOption,
+    RaceEthnicityOption,
+    VeteranOption,
+    VeteranStatusOption,
+    YesNoOption,
 )
 
 

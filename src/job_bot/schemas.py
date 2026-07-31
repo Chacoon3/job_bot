@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.dialects.postgresql import Range
@@ -157,6 +157,25 @@ JobFormFieldKey = Literal[
 ]
 
 
+YesNoOption = Literal["yes", "no", "decline"]
+VeteranOption = Literal["yes", "no", "decline"]
+DisabilityOption = Literal["yes", "no", "decline"]
+VeteranStatusOption = VeteranOption
+DisabilityStatusOption = DisabilityOption
+GenderOption = Literal["male", "female", "nonbinary", "self_describe", "decline"]
+RaceEthnicityOption = Literal[
+    "american_indian_alaska_native",
+    "asian",
+    "black",
+    "hispanic_latino",
+    "native_hawaiian_pacific_islander",
+    "white",
+    "two_or_more",
+    "other",
+    "decline",
+]
+
+
 class CandidateProfile(BaseModel):
     first_name: str
     last_name: str
@@ -175,16 +194,16 @@ class CandidateProfile(BaseModel):
     portfolio_url: str | None = None
     website_url: str | None = None
 
-    authorized_to_work: bool = True
-    requires_sponsorship: bool = True
+    authorized_to_work: YesNoOption = "yes"
+    requires_sponsorship: YesNoOption = "yes"
     visa_status: str | None = None
 
-    willing_to_relocate: bool = True
-    gender: str | None = None
-    is_hispanic_or_latino: bool = False
-    race: str = "Asian"
-    disability_status: bool = False
-    veteran_status: bool = False
+    willing_to_relocate: YesNoOption = "yes"
+    gender: GenderOption | None = None
+    is_hispanic_or_latino: YesNoOption = "no"
+    race: RaceEthnicityOption = "asian"
+    disability_status: DisabilityStatusOption = "no"
+    veteran_status: VeteranStatusOption = "no"
 
     education: list[EducationDegree]
     resume_text: str
@@ -208,13 +227,13 @@ class CandidateProfile(BaseModel):
             f"LinkedIn: {self.linkedin_url}\n"
             f"GitHub: {self.github_url}\n"
             f"Portfolio: {self.portfolio_url}\n"
-            f"Requires Sponsorship: {'Yes' if self.requires_sponsorship else 'No'}\n"
+            f"Requires Sponsorship: {self.requires_sponsorship.title()}\n"
             f"Education:\n{education_str}\n"
             f"Resume Text:\n{self.resume_text}\n"
             f"Summary:\n{self.summary}"
         )
 
-    def get_answer(self, field_key: JobFormFieldKey) -> str | bool | None:
+    def get_answer(self, field_key: JobFormFieldKey) -> Any:
         """Get the answer for a given field key."""
         return getattr(self, field_key, None)
 
@@ -303,7 +322,10 @@ class DropdownOption(BaseModel):
     selected: bool | None = None
 
     def __str__(self) -> str:
-        return f"DropdownOption(index={self.index}, label={self.label}, value={self.value}, selected={self.selected})"
+        return (
+            f"DropdownOption(index={self.index}, label={self.label}, "
+            f"value={self.value}, selected={self.selected})"
+        )
 
     def __repr__(self) -> str:
         return self.__str__()

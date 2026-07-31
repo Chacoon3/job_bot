@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
 
+import pytest
+from pydantic import ValidationError
 from sqlalchemy.dialects.postgresql import Range
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import JobEntry
-from job_bot.schemas import GreenhouseBoardSchema, JobEntrySchema
+from job_bot.schemas import CandidateProfile, GreenhouseBoardSchema, JobEntrySchema
 
 
 def test_job_entry_schema_round_trips_orm_ranges() -> None:
@@ -56,3 +58,38 @@ def test_greenhouse_board_schema_reads_orm_attributes() -> None:
     assert schema.model_dump(mode="json")["verified_at"] == timestamp.isoformat().replace(
         "+00:00", "Z"
     )
+
+
+def test_candidate_profile_uses_canonical_dropdown_options() -> None:
+    profile = CandidateProfile(
+        first_name="Alex",
+        last_name="Doe",
+        email="alex@example.com",
+        phone_country="+1",
+        phone="555-0100",
+        gender="nonbinary",
+        education=[],
+        resume_text="Software engineer",
+        summary="Backend engineer",
+    )
+
+    assert profile.authorized_to_work == "yes"
+    assert profile.is_hispanic_or_latino == "no"
+    assert profile.race == "asian"
+    assert profile.disability_status == "no"
+    assert profile.veteran_status == "no"
+
+
+def test_candidate_profile_rejects_noncanonical_dropdown_option() -> None:
+    with pytest.raises(ValidationError):
+        CandidateProfile(
+            first_name="Alex",
+            last_name="Doe",
+            email="alex@example.com",
+            phone_country="+1",
+            phone="555-0100",
+            race="Asian",
+            education=[],
+            resume_text="Software engineer",
+            summary="Backend engineer",
+        )

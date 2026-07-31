@@ -200,7 +200,7 @@ async def agent_flow(url: str, playwright: Playwright):
         # do llm inspection and browser init in parallel
         # ensure we start page operation at
         res = await asyncio.gather(
-            inspect_page(url), page.goto(url, wait_until="domcontentloaded"), asyncio.sleep(5)
+            inspect_page(url), page.goto(url, wait_until="domcontentloaded"), asyncio.sleep(2)
         )
         fields = res[0]
         filler = GreenHouseFiller(browser_session)
