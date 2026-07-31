@@ -195,7 +195,7 @@ async def use_tool(
     )
 
 
-async def agent_flow(url: str, playwright: Playwright):
+async def agent_flow(url: str, playwright: Playwright, user: User) -> None:
 
     async with BrowserSession(playwright, False) as browser_session:
         page = browser_session.page()
@@ -206,20 +206,8 @@ async def agent_flow(url: str, playwright: Playwright):
             inspect_page(url), page.goto(url, wait_until="domcontentloaded"), asyncio.sleep(2)
         )
         fields = res[0]
-        filler = GreenHouseFiller(browser_session, None)
-        for field in fields:
-            try:
-                if field.input_type in ["text", "email", "tel", "url", "number"]:
-                    await filler.fill(
-                        field, "test_value"
-                    )  # Replace "test_value" with actual values as needed
-            except Exception as e:
-                get_logger().error(
-                    "Failed to fill field.",
-                    field=field,
-                    error=str(e),
-                )
-
+        filler = GreenHouseFiller(browser_session, user)
+        await filler.fill_fields(fields)
         await asyncio.sleep(10)  # Adjust the duration as needed
 
 
