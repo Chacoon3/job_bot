@@ -51,10 +51,6 @@ def _page_inspections_cache_key(
     return _page_inspections_key(url, version)
 
 
-@AppRedisCache.cached(
-    key_builder=_page_inspections_cache_key,
-    ttl=PAGE_INSPECTION_CACHE_TTL_SECONDS,
-)
 def _load_page_inspections(session: Session, url: str, version: str) -> list[PageInspection]:
     records = session.scalars(
         select(JobPageInspection)
@@ -287,9 +283,8 @@ async def agent_flow(
             page.goto(url, wait_until="domcontentloaded"),
         )
         await asyncio.sleep(3)
-        fields = [field for inspection in res[0] for field in inspection.form_fields]
-        filler = GreenHouseFiller(browser_session, user, file_set)
-        await filler.apply(fields)
+        filler = GreenHouseFiller(browser_session, user, res[0], file_set)
+        await filler.apply()
         await asyncio.sleep(10)  # Adjust the duration as needed
 
 

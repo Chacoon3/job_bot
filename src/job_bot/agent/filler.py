@@ -11,7 +11,7 @@ from job_bot.agent.filler_tools import (
     locate_by_accessible_name,
     select_dropdown_option,
 )
-from job_bot.schemas import ApplicationFileSet, FormField, User
+from job_bot.schemas import ApplicationFileSet, FormField, PageInspection, User
 from job_bot.utils.browser_tools import BrowserSession
 
 
@@ -20,11 +20,13 @@ class BaseApplier(ABC):
         self,
         browser_session: BrowserSession,
         user: User,
+        page_inspection: list[PageInspection],
         file_set: ApplicationFileSet | None = None,
     ) -> None:
         self.browser_session = browser_session
         self.user = user
         self.file_set = file_set
+        self.page_inspection = page_inspection
 
     @abstractmethod
     async def fill(self, field: FormField, value: str) -> None: ...
@@ -53,32 +55,8 @@ class BaseApplier(ABC):
     @abstractmethod
     async def pick_date(self, field: FormField, value: str) -> None: ...
 
-    async def apply(self, fields: list[FormField]) -> None:
-        for field in fields:
-            try:
-                bind_contextvars(
-                    field_key=field.field_key,
-                    accessible_name=field.accessible_name,
-                    interaction_kind=field.interaction_strategy,
-                    input_type=field.input_type,
-                )
-
-                if field.field_key == "application-irrelevant":
-                    get_logger().info("Skipping irrelevant field")
-                    continue
-
-                filler = getattr(self, field.interaction_strategy, None)
-                if filler is None:
-                    raise ValueError("No filler found for interaction kind.")
-                answer = self.user.get_answer(field.field_key)
-                if answer is None:
-                    raise ValueError("No answer found for field key")
-                await filler(field, answer)
-                get_logger().info("Field filled successfully", field_value=str(answer)[:5])
-            except Exception as e:
-                get_logger().error("Error filling field", error=str(e))
-            finally:
-                unbind_contextvars("field_key", "accessible_name", "interaction_kind", "input_type")
+    @abstractmethod
+    async def apply(self) -> None: ...
 
 
 class GreenHouseFiller(BaseApplier):
@@ -189,3 +167,31 @@ class GreenHouseFiller(BaseApplier):
 
     async def pick_date(self, field: FormField, value: str) -> None:
         pass
+
+    async def apply(self) -> None:
+
+        for field in self.page_inspection[0].form_fields:
+            try:
+                bind_contextvars(
+                    field_key=field.field_key,
+                    accessible_name=field.accessible_name,
+                    interaction_kind=field.interaction_strategy,
+                    input_type=field.input_type,
+                )
+
+                if field.field_key == "application-irrelevant":
+                    get_logger().info("Skipping irrelevant field")
+                    continue
+
+                filler = getattr(self, field.interaction_strategy, None)
+                if filler is None:
+                    raise ValueError("No filler found for interaction kind.")
+                answer = self.user.get_answer(field.field_key)
+                if answer is None:
+                    raise ValueError("No answer found for field key")
+                await filler(field, answer)
+                get_logger().info("Field filled successfully", field_value=str(answer)[:5])
+            except Exception as e:
+                get_logger().error("Error filling field", error=str(e))
+            finally:
+                unbind_contextvars("field_key", "accessible_name", "interaction_kind", "input_type")
