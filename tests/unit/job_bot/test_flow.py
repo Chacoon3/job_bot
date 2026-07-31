@@ -82,10 +82,11 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
         pay_range_maximum=160000,
     )
     candidate = CandidateProfile(
-        name="Alex Doe",
+        first_name="Alex",
+        last_name="Doe",
         email="alex@example.com",
+        phone_country="+1",
         phone="555-0100",
-        phone_area_code="555",
         linkedin_url="https://linkedin.com/in/alexdoe",
         github_url="https://github.com/alexdoe",
         portfolio_url="https://alexdoe.dev",
@@ -100,7 +101,7 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
             )
         ],
         resume_text="Senior Python engineer with cloud and platform experience.",
-        require_sponsorship=True,
+        requires_sponsorship="yes",
         summary="Senior backend engineer",
     )
 
@@ -122,4 +123,5 @@ def test_apply_job_fills_fields_and_submits(monkeypatch) -> None:
     message = fake_agent.payload["messages"][0]
     assert "Open and apply to the job at https://example.com/jobs/123" in message.content
     assert "Candidate profile:" in message.content
-    assert '"name": "Alex Doe"' in message.content
+    assert '"first_name": "Alex"' in message.content
+    assert '"last_name": "Doe"' in message.content

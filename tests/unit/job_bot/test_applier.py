@@ -23,6 +23,7 @@ class FakeFrame:
     def __init__(self, name: str, url: str) -> None:
         self.name = name
         self.url = url
+        self.page: FakePage | None = None
 
     async def evaluate(self, expression: str, argument: object) -> object:
         if "interactiveSelectors" in expression:
@@ -57,9 +58,9 @@ class FakeFrame:
             }
         ]
 
-    def locator(self, selector: str) -> FakeLocator:
-        assert selector == "form"
-        return FakeLocator()
+    def locator(self, selector: str) -> "FakePageLocator":
+        assert self.page is not None
+        return FakePageLocator(self.page, selector)
 
 
 class FakePage:
@@ -73,6 +74,8 @@ class FakePage:
         self.timeout = 0
         self.click_callback = None
         self.selector_counts: dict[str, int] = {}
+        for frame in frames:
+            frame.page = self
 
     def is_closed(self) -> bool:
         return self.closed
@@ -130,10 +133,21 @@ class FakePageLocator:
     async def set_input_files(self, files: object) -> None:
         self.page.uploaded_files = files
 
+    async def evaluate(self, expression: str) -> str:
+        if "cloneNode" in expression:
+            assert self.selector == "form"
+            return '<form><input name="email"></form>'
+        if "tagName.toLowerCase" in expression:
+            return "input"
+        raise AssertionError(f"Unexpected evaluate expression: {expression}")
+
     async def get_attribute(self, name: str) -> str | None:
         if name == "type" and self.selector == 'input[type="file"]':
             return "file"
         return None
+
+    async def is_disabled(self) -> bool:
+        return False
 
 
 def _session_with_pages(*pages: FakePage) -> BrowserSession:
@@ -143,8 +157,22 @@ def _session_with_pages(*pages: FakePage) -> BrowserSession:
     return session
 
 
-def _tool(tools: list[object], name: str) -> object:
-    return next(item for item in tools if item.name == name)
+class ToolAdapter:
+    def __init__(self, tool: object) -> None:
+        self.tool = tool
+
+    async def ainvoke(self, arguments: dict[str, object]) -> object:
+        invoke = getattr(self.tool, "ainvoke", None)
+        if invoke is not None:
+            return await invoke(arguments)
+        return await self.tool(**arguments)
+
+
+def _tool(tools: list[object], name: str) -> ToolAdapter:
+    item = next(
+        item for item in tools if getattr(item, "name", getattr(item, "__name__", None)) == name
+    )
+    return ToolAdapter(item)
 
 
 def test_tab_tools_list_and_switch_active_page() -> None:
@@ -212,8 +240,8 @@ def test_page_inspection_distinguishes_apply_action_from_job_alert_form() -> Non
     assert snapshot["interactive"][0]["text"] == "Apply now"
     assert snapshot["interactive"][0]["selector"] == "#apply"
     assert snapshot["forms"][0]["context"] == "Get job alerts by email"
-    assert "click the relevant Apply control" in snapshot["guidance"]
-    assert "browser_inspect_form_controls" in snapshot["guidance"]
+    assert snapshot["tab_url"] == "https://example.com/job"
+    assert snapshot["frame_index"] == 0
 
 
 def test_fill_text_rejects_unknown_selector_without_waiting() -> None:
@@ -233,7 +261,12 @@ def test_fill_text_rejects_unknown_selector_without_waiting() -> None:
 def test_click_apply_follows_new_application_tab() -> None:
     frame = FakeFrame("", "https://example.com/job")
     job_page = FakePage("https://example.com/job", "Job", [frame])
-    application_page = FakePage("https://apply.example.com", "Application", [frame])
+    application_frame = FakeFrame("", "https://apply.example.com")
+    application_page = FakePage(
+        "https://apply.example.com",
+        "Application",
+        [application_frame],
+    )
     session = _session_with_pages(job_page)
     job_page.click_callback = lambda: session._context.pages.append(application_page)
     tools = build_browser_tools(session)
@@ -325,5 +358,8 @@ def test_upload_file_uses_in_memory_playwright_payload() -> None:
         "mimeType": "application/pdf",
         "buffer": b"pdf-bytes",
     }
-    assert result.startswith("Submitted 'resume.pdf' to the file input")
-    assert "inspect the page now" in result
+    payload = json.loads(result)
+    assert payload["success"] is True
+    assert payload["action"] == "upload_file"
+    assert payload["filename"] == "resume.pdf"
+    assert "Inspect the page" in payload["next_action"]

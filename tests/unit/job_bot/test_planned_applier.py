@@ -61,6 +61,7 @@ def test_inspect_page_rejects_unparsed_response(monkeypatch) -> None:
         "job_bot.agent.planned_applier.get_async_openai_client",
         lambda: client,
     )
+    monkeypatch.setenv("JOB_BOT_LLM_MODEL", "test-model")
 
     with pytest.raises(RuntimeError, match="Unexpected page inspection response type"):
         asyncio.run(inspect_page.__wrapped__("https://example.com/apply?test=unparsed"))
@@ -70,11 +71,12 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
     field = _form_field()
     navigation_response = object()
     page = SimpleNamespace(goto=AsyncMock(return_value=navigation_response))
-    locator = SimpleNamespace(fill=AsyncMock())
+    filler = SimpleNamespace(fill=AsyncMock())
 
     class FakeBrowserSession:
-        def __init__(self, playwright: object) -> None:
+        def __init__(self, playwright: object, headless: bool) -> None:
             self.playwright = playwright
+            self.headless = headless
 
         async def __aenter__(self):
             return self
@@ -86,10 +88,11 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
             return page
 
     inspect = AsyncMock(return_value=[field])
-    resolve = AsyncMock(return_value=SimpleNamespace(locator=locator))
+    filler_factory = Mock(return_value=filler)
     monkeypatch.setattr("job_bot.agent.planned_applier.BrowserSession", FakeBrowserSession)
     monkeypatch.setattr("job_bot.agent.planned_applier.inspect_page", inspect)
-    monkeypatch.setattr("job_bot.agent.planned_applier.resolve_field_locator", resolve)
+    monkeypatch.setattr("job_bot.agent.planned_applier.GreenHouseFiller", filler_factory)
+    monkeypatch.setattr("job_bot.agent.planned_applier.asyncio.sleep", AsyncMock())
 
     asyncio.run(agent_flow("https://example.com/apply", SimpleNamespace()))
 
@@ -97,5 +100,5 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
         "https://example.com/apply",
         wait_until="domcontentloaded",
     )
-    resolve.assert_awaited_once_with(page, field, require_editable=True)
-    locator.fill.assert_awaited_once_with("Zhang")
+    filler_factory.assert_called_once()
+    filler.fill.assert_awaited_once_with(field, "test_value")

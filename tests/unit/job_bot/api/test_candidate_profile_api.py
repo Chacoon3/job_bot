@@ -4,11 +4,14 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from job_bot.api import candidate_profile, dependencies
-from job_bot.main import app
 from job_bot.schemas import CandidateProfile
+
+app = FastAPI()
+app.include_router(candidate_profile.router)
 
 
 class DummySession:
