@@ -5,12 +5,26 @@ import os
 import sys
 
 import structlog
+from opentelemetry import trace
 from structlog.typing import EventDict, WrappedLogger
 
 LOG_LEVEL_ENV = "LOG_LEVEL"
 APP_ENV_ENV = "APP_ENV"
 LOCAL_APP_ENV = "local"
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+
+
+def _add_trace_context(
+    _logger: WrappedLogger,
+    _method_name: str,
+    event_dict: EventDict,
+) -> EventDict:
+    """Correlate logs emitted inside an active OpenTelemetry span."""
+    span_context = trace.get_current_span().get_span_context()
+    if span_context.is_valid:
+        event_dict["trace_id"] = format(span_context.trace_id, "032x")
+        event_dict["span_id"] = format(span_context.span_id, "016x")
+    return event_dict
 
 
 def _order_log_keys(
@@ -36,6 +50,7 @@ def configure_logging() -> None:
     )
     shared_processors = [
         structlog.contextvars.merge_contextvars,
+        _add_trace_context,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),

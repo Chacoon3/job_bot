@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import os
+
+import structlog
+from fastapi import FastAPI
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+OTEL_EXPORTER_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_ENDPOINT"
+OTEL_TRACES_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+OTEL_METRICS_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
+OTEL_SDK_DISABLED_ENV = "OTEL_SDK_DISABLED"
+OTEL_SERVICE_NAME_ENV = "OTEL_SERVICE_NAME"
+OTEL_TRACES_EXPORTER_ENV = "OTEL_TRACES_EXPORTER"
+OTEL_METRICS_EXPORTER_ENV = "OTEL_METRICS_EXPORTER"
+APP_ENV_ENV = "APP_ENV"
+
+logger = structlog.get_logger(__name__)
+_configured = False
+
+
+def configure_telemetry(app: FastAPI) -> bool:
+    """Configure OTLP tracing and metrics when an exporter endpoint is present."""
+    global _configured  # pylint: disable=global-statement
+
+    if _configured or _sdk_disabled():
+        return False
+
+    common_endpoint = os.getenv(OTEL_EXPORTER_ENDPOINT_ENV)
+    traces_enabled = bool(common_endpoint or os.getenv(OTEL_TRACES_ENDPOINT_ENV)) and not _is_none(
+        OTEL_TRACES_EXPORTER_ENV
+    )
+    metrics_endpoint = common_endpoint or os.getenv(OTEL_METRICS_ENDPOINT_ENV)
+    metrics_enabled = bool(metrics_endpoint) and not _is_none(OTEL_METRICS_EXPORTER_ENV)
+    if not traces_enabled and not metrics_enabled:
+        return False
+
+    resource = Resource.create(
+        {
+            "service.name": os.getenv(OTEL_SERVICE_NAME_ENV, "job-bot"),
+            "service.version": "0.1.0",
+            "deployment.environment.name": os.getenv(APP_ENV_ENV, "local"),
+        }
+    )
+
+    if traces_enabled:
+        tracer_provider = TracerProvider(resource=resource)
+        tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+        trace.set_tracer_provider(tracer_provider)
+
+    if metrics_enabled:
+        metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+        metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
+
+    FastAPIInstrumentor.instrument_app(app)
+    HTTPXClientInstrumentor().instrument()
+    SQLAlchemyInstrumentor().instrument()
+    _configured = True
+    logger.info(
+        "opentelemetry_configured",
+        traces_enabled=traces_enabled,
+        metrics_enabled=metrics_enabled,
+        service_name=os.getenv(OTEL_SERVICE_NAME_ENV, "job-bot"),
+    )
+    return True
+
+
+def _sdk_disabled() -> bool:
+    return os.getenv(OTEL_SDK_DISABLED_ENV, "").strip().lower() in {"true", "1", "yes"}
+
+
+def _is_none(environment_variable: str) -> bool:
+    return os.getenv(environment_variable, "otlp").strip().lower() == "none"

@@ -24,3 +24,8 @@ psycopg[binary]==3.3.4
 alembic==1.18.5
 structlog==26.1.0
 redis==8.0.1
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-instrumentation-fastapi==0.65b0
+opentelemetry-instrumentation-httpx==0.65b0
+opentelemetry-instrumentation-sqlalchemy==0.65b0

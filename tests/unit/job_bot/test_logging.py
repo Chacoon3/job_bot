@@ -4,6 +4,7 @@ import json
 import logging
 
 import structlog
+from opentelemetry.sdk.trace import TracerProvider
 
 from job_bot.logging import configure_logging
 
@@ -62,3 +63,18 @@ def test_configure_logging_replaces_uvicorn_handlers(monkeypatch, capsys) -> Non
     log_record = json.loads(capsys.readouterr().out)
     assert log_record["event"] == "server_started"
     assert log_record["logger"] == "uvicorn.access"
+
+
+def test_configure_logging_adds_active_trace_context(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    configure_logging()
+    tracer = TracerProvider().get_tracer("test")
+
+    with tracer.start_as_current_span("test-span") as span:
+        structlog.get_logger("test").info("inside_span")
+        expected_trace_id = format(span.get_span_context().trace_id, "032x")
+        expected_span_id = format(span.get_span_context().span_id, "016x")
+
+    log_record = json.loads(capsys.readouterr().out)
+    assert log_record["trace_id"] == expected_trace_id
+    assert log_record["span_id"] == expected_span_id

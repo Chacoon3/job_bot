@@ -65,6 +65,37 @@ long-lived PostgreSQL connections.
 uvicorn job_bot.main:app --host 0.0.0.0 --port 8080
 ```
 
+## OpenTelemetry
+
+The service emits traces and metrics over OTLP/HTTP and automatically instruments
+FastAPI requests, HTTPX calls, and SQLAlchemy operations. Structured logs produced
+inside a span include `trace_id` and `span_id` fields for correlation.
+
+Telemetry stays off when no endpoint is configured. Point it at an OpenTelemetry
+Collector or an OTLP-compatible observability backend:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+OTEL_SERVICE_NAME=job-bot
+```
+
+The exporter honors standard OTLP environment variables, including
+`OTEL_EXPORTER_OTLP_HEADERS`, signal-specific endpoints and headers,
+`OTEL_RESOURCE_ATTRIBUTES`, and `OTEL_TRACES_SAMPLER`. Set
+`OTEL_SDK_DISABLED=true` to disable telemetry explicitly. Individual signals can
+be disabled with `OTEL_TRACES_EXPORTER=none` or `OTEL_METRICS_EXPORTER=none`.
+
+For a quick local trace viewer, run Jaeger with OTLP enabled and disable the
+metric exporter:
+
+```bash
+docker run --rm -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 OTEL_METRICS_EXPORTER=none \
+  uvicorn job_bot.main:app --host 0.0.0.0 --port 8080
+```
+
+Then open `http://localhost:16686` after sending requests to the application.
+
 ## Build container locally
 
 ```bash
@@ -101,7 +132,8 @@ their `latest` versions as `DATABASE_URL` and `OPENAI_API_KEY`.
 Optional sizing variables are `CLOUD_RUN_CPU`, `CLOUD_RUN_MEMORY`,
 `CLOUD_RUN_MIN_INSTANCES`, `CLOUD_RUN_MAX_INSTANCES`, `DB_POOL_SIZE`,
 `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT_SECONDS`, and
-`DB_POOL_RECYCLE_SECONDS`.
+`DB_POOL_RECYCLE_SECONDS`. Set the optional `OTEL_EXPORTER_OTLP_ENDPOINT`
+variable to enable telemetry for deployed revisions.
 
 The Artifact Registry repository must exist before the first deployment. The
 deployer service account needs permission to push images, deploy Cloud Run,

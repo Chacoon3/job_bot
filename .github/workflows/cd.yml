@@ -119,6 +119,9 @@ jobs:
           image: ${{ steps.image.outputs.uri }}
           env_vars: |-
             JOB_BOT_LLM_MODEL=${{ vars.JOB_BOT_LLM_MODEL }}
+            APP_ENV=production
+            OTEL_SERVICE_NAME=${{ env.SERVICE }}
+            OTEL_EXPORTER_OTLP_ENDPOINT=${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
             DISK_CACHE_DIR=/tmp/job_bot_cache
             DB_POOL_SIZE=${{ vars.DB_POOL_SIZE || '5' }}
             DB_MAX_OVERFLOW=${{ vars.DB_MAX_OVERFLOW || '5' }}
