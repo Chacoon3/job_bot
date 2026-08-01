@@ -2,7 +2,7 @@ import random
 import re
 from typing import Any
 
-from playwright.async_api import expect
+from playwright.async_api import Locator, Page, expect
 from structlog import get_logger
 from structlog.contextvars import bind_contextvars, unbind_contextvars
 
@@ -10,11 +10,13 @@ from job_bot.agent.dropdown_regulator import get_dropdown_regulator_by_field_key
 from job_bot.agent.file_upload import upload_greenhouse_cover_letter, upload_greenhouse_resume
 from job_bot.agent.filler import BaseApplier
 from job_bot.agent.filler_tools import (
+    extract_dropdown_options,
     fill_text_field,
     inspect_active_page,
     locate_by_accessible_name,
     select_dropdown_option,
 )
+from job_bot.openai_client import get_async_openai_client
 from job_bot.schemas import FormField, JobFormFieldKey
 
 
@@ -34,7 +36,7 @@ def _has_correct_value(field: FormField, expected_value: object) -> bool:
         return True
 
     if expected_value is None:
-        return False
+        return True
 
     if field.interaction_strategy in {"select_radio", "toggle_checkbox"}:
         if isinstance(expected_value, bool):
@@ -95,6 +97,13 @@ def _has_correct_value(field: FormField, expected_value: object) -> bool:
             return True
 
     return False
+
+
+async def _llm_infer_country_dropdown_option(
+    page: Page, locator: Locator, expected_value: str
+) -> str | None:
+    model = get_async_openai_client()
+    dropdown_options = await extract_dropdown_options(page, locator)
 
 
 class GreenHouseFiller(BaseApplier):
@@ -257,10 +266,18 @@ class GreenHouseFiller(BaseApplier):
                     )
 
             completed_inspection = await inspect_active_page(self.browser_session.page())
-            all_fields_filled = all(
-                _has_correct_value(field, self.get_answer(field.field_key))
+            field_correctness = {
+                field.field_key: (
+                    _has_correct_value(field, self.get_answer(field.field_key)),
+                    self.get_answer(field.field_key),
+                    field.current_value,
+                )
                 for field in completed_inspection.form_fields
+            }
+            get_logger().debug(
+                "Field correctness after filling attempt", field_correctness=field_correctness
             )
+            all_fields_filled = all(field_correctness.values())
 
             await self.browser_session.page().wait_for_timeout(
                 random.randint(100, 1500)

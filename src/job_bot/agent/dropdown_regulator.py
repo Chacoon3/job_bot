@@ -81,14 +81,14 @@ _DECLINE = (
 
 _YES_NO_RULES = _compile_rules(
     {
-        "answer:decline": _DECLINE,
-        "answer:yes": (
+        "decline": _DECLINE,
+        "yes": (
             r"yes",
             r"y",
             r"true",
             r"yes\b.*",
         ),
-        "answer:no": (
+        "no": (
             r"no",
             r"n",
             r"false",
@@ -105,8 +105,8 @@ def regulate_yes_no(label: str) -> str:
 
 _VETERAN_RULES = _compile_rules(
     {
-        "veteran:decline": _DECLINE,
-        "veteran:no": (
+        "decline": _DECLINE,
+        "no": (
             r"no",
             r"not a veteran",
             r"i am not a veteran",
@@ -116,7 +116,7 @@ _VETERAN_RULES = _compile_rules(
             r"i am not one of the following protected veterans",
             r"no\b.*(?:veteran|protected veteran).*",
         ),
-        "veteran:yes": (
+        "yes": (
             r"yes",
             r"veteran",
             r"protected veteran",
@@ -138,8 +138,8 @@ def regulate_veteran_status(label: str) -> str:
 
 _DISABILITY_RULES = _compile_rules(
     {
-        "disability:decline": _DECLINE,
-        "disability:no": (
+        "decline": _DECLINE,
+        "no": (
             r"no",
             r"no i do not have a disability",
             r"no i don t have a disability",
@@ -147,7 +147,7 @@ _DISABILITY_RULES = _compile_rules(
             r"i don t have a disability",
             r"no\b.*(?:disability|disabled).*",
         ),
-        "disability:yes": (
+        "yes": (
             r"yes",
             r"yes i have a disability",
             r"i have a disability",
@@ -204,47 +204,47 @@ def regulate_gender(label: str) -> str:
 
 _RACE_RULES = _compile_rules(
     {
-        "race:decline": _DECLINE,
-        "race:two_or_more": (
+        "decline": _DECLINE,
+        "two_or_more": (
             r"two or more races",
             r"multiracial",
             r"multi racial",
             r"mixed race",
         ),
-        "race:hispanic_latino": (
+        "hispanic_latino": (
             r"hispanic or latino",
             r"hispanic latino",
             r"latino or hispanic",
             r"latino",
             r"hispanic",
         ),
-        "race:asian": (
+        "asian": (
             r"asian",
             r"asian not hispanic or latino",
         ),
-        "race:white": (
+        "white": (
             r"white",
             r"white not hispanic or latino",
             r"caucasian",
         ),
-        "race:black": (
+        "black": (
             r"black",
             r"african american",
             r"black or african american",
             r"black or african american not hispanic or latino",
         ),
-        "race:american_indian_alaska_native": (
+        "american_indian_alaska_native": (
             r"american indian",
             r"alaska native",
             r"american indian or alaska native",
             r"native american",
         ),
-        "race:native_hawaiian_pacific_islander": (
+        "native_hawaiian_pacific_islander": (
             r"native hawaiian",
             r"pacific islander",
             r"native hawaiian or other pacific islander",
         ),
-        "race:other": (
+        "other": (
             r"other",
             r"some other race",
         ),
