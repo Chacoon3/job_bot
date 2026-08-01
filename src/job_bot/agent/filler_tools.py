@@ -1,6 +1,7 @@
 import hashlib
 import inspect
 import json
+import os
 import random
 import re
 from collections.abc import Callable
@@ -615,7 +616,7 @@ async def llm_infer_correct_dropdown_option(
     model = get_async_openai_client()
     dropdown_options = await extract_dropdown_options(page, locator)
     resp = await model.responses.create(
-        model=model.model_name,
+        model=os.getenv("JOB_BOT_LLM_MODEL"),
         input=[
             {
                 "role": "system",

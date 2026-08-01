@@ -151,7 +151,7 @@ class GreenHouseFiller(BaseApplier):
                 value,
             )
             if option_to_select:
-                query = option_to_select.label
+                query = option_to_select
             else:
                 raise ValueError(f"Could not find a suitable option for city: {value}")
         elif field.field_key == "communications_consent" or field.field_key == "privacy_consent":
