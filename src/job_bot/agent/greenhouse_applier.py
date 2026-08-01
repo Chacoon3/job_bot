@@ -16,7 +16,7 @@ from job_bot.agent.filler_tools import (
     locate_by_accessible_name,
     select_dropdown_option,
 )
-from job_bot.schemas import FormField, JobFormFieldKey
+from job_bot.schemas import FormField, JobFormFieldKey, YesNoOption
 
 
 def _canonicalize_phone_number(value: object) -> str:
@@ -154,6 +154,9 @@ class GreenHouseFiller(BaseApplier):
                 query = option_to_select.label
             else:
                 raise ValueError(f"Could not find a suitable option for city: {value}")
+        elif field.field_key == "communications_consent" or field.field_key == "privacy_consent":
+            value: YesNoOption = "no"
+            query = value
 
         await select_dropdown_option(
             self.browser_session.page(),

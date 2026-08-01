@@ -3,7 +3,12 @@ import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from job_bot.agent.filler_tools import _infer_field_key, fill_text_field, select_dropdown_option
+from job_bot.agent.filler_tools import (
+    _dropdown_option_cache_key,
+    _infer_field_key,
+    fill_text_field,
+    select_dropdown_option,
+)
 from job_bot.schemas import DropdownSnapshot
 
 
@@ -38,6 +43,54 @@ def test_infer_field_key_treats_phone_sms_prompt_as_communications_consent() -> 
     )
 
     assert field_key == "communications_consent"
+
+
+def test_infer_field_key_does_not_treat_ethnicity_as_city() -> None:
+    field_key = _infer_field_key(
+        {
+            "accessible_name": "Are you Hispanic/Latino?",
+            "input_name": "job_application[ethnicity]",
+            "element_id": "job_application_ethnicity",
+            "input_type": "text",
+            "interaction_strategy": "select_combobox",
+        }
+    )
+
+    assert field_key == "is_hispanic_or_latino"
+
+
+def test_infer_field_key_recognizes_city_identifier_boundaries() -> None:
+    assert _infer_field_key({"input_name": "job_application[location_city]"}) == "city"
+
+
+def test_dropdown_option_cache_key_uses_bound_arguments() -> None:
+    def infer(page, locator, expected_value):
+        raise AssertionError("The cache key builder must not call the function")
+
+    page = SimpleNamespace(url="https://boards.example/jobs/123")
+
+    positional_key = _dropdown_option_cache_key(
+        infer,
+        (page, "get_by_label('Location')", "New York"),
+        {},
+    )
+    keyword_key = _dropdown_option_cache_key(
+        infer,
+        (),
+        {
+            "page": page,
+            "locator": "get_by_label('Location')",
+            "expected_value": "New York",
+        },
+    )
+    different_value_key = _dropdown_option_cache_key(
+        infer,
+        (page, "get_by_label('Location')", "Boston"),
+        {},
+    )
+
+    assert positional_key == keyword_key
+    assert positional_key != different_value_key
 
 
 def test_select_dropdown_option_queries_an_empty_autocomplete(monkeypatch) -> None:

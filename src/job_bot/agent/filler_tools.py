@@ -1,5 +1,8 @@
+import hashlib
+import inspect
 import json
 import random
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -9,7 +12,6 @@ from job_bot.openai_client import get_async_openai_client
 from job_bot.schemas import DropdownOption, DropdownSnapshot, FormField, PageInspection
 from job_bot.utils.browser_tools import Locator
 from job_bot.utils.caching import AppRedisCache
-from job_bot.utils.hash_helper import schema_string_key
 
 
 async def fill_text_field(
@@ -323,12 +325,12 @@ async def select_dropdown_option(
     if not matches:
         available = [option.label for option in snapshot.options]
         raise OptionNotFoundError(
-            f"No matching option found for {option_label!r}; " f"available options: {available}"
+            f"No matching option found for {option_label!r}; available options: {available}"
         )
 
     if len(matches) > 1:
         raise AmbiguousOptionError(
-            f"Multiple options match {option_label!r}: " f"{[option.label for option in matches]}"
+            f"Multiple options match {option_label!r}: {[option.label for option in matches]}"
         )
 
     match = matches[0]
@@ -401,7 +403,6 @@ def _infer_field_key(field: dict[str, Any]) -> str:
         (("last name", "last_name", "lastname"), "last_name"),
         (("email",), "email"),
         (("phone", "telephone"), "phone"),
-        (("location (city)", "city"), "city"),
         (("linkedin",), "linkedin_url"),
         (("github",), "github_url"),
         (("portfolio",), "portfolio_url"),
@@ -417,6 +418,11 @@ def _infer_field_key(field: dict[str, Any]) -> str:
         (("cover letter",), "attach_cover_letter_button"),
         (("country",), "country"),
     )
+    # Match city as an identifier or word, not as a substring of words such as
+    # "ethnicity". Underscores and hyphens are intentionally valid boundaries
+    # so Greenhouse identifiers such as ``location_city`` still match.
+    if re.search(r"(?<![a-z])city(?![a-z])", name):
+        return "city"
     for needles, field_key in rules:
         if any(needle in name for needle in needles):
             return field_key
@@ -568,10 +574,27 @@ async def inspect_active_page(page: Page) -> PageInspection:
     return PageInspection(form_fields=fields)
 
 
-@AppRedisCache.cached(
-    key_builder=lambda page, locator, exp_val: schema_string_key("page_inspections", page.url),
-    ttl=60 * 60 * 24 * 7,  # 1 week
-)
+def _dropdown_option_cache_key(
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> str:
+    """Build a key for one dropdown, requested value, and page URL."""
+    bound = inspect.signature(func).bind(*args, **kwargs)
+    payload = json.dumps(
+        {
+            "url": bound.arguments["page"].url,
+            "locator": str(bound.arguments["locator"]),
+            "expected_value": bound.arguments["expected_value"],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return f"dropdown_option_{hashlib.sha256(payload.encode()).hexdigest()}"
+
+
+@AppRedisCache.cached(key_builder=_dropdown_option_cache_key, ttl=60 * 60 * 24 * 7)
 async def llm_infer_correct_dropdown_option(
     page: Page,
     locator: Locator,
