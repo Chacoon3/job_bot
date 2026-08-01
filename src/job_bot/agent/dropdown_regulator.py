@@ -166,28 +166,28 @@ def regulate_disability_status(label: str) -> str:
 
 _GENDER_RULES = _compile_rules(
     {
-        "gender:decline": _DECLINE,
-        "gender:male": (
+        "decline": _DECLINE,
+        "male": (
             r"male",
             r"man",
             r"cis male",
             r"cisgender male",
             r"i identify as (?:a )?(?:male|man)",
         ),
-        "gender:female": (
+        "female": (
             r"female",
             r"woman",
             r"cis female",
             r"cisgender female",
             r"i identify as (?:a )?(?:female|woman)",
         ),
-        "gender:nonbinary": (
+        "nonbinary": (
             r"non binary",
             r"nonbinary",
             r"gender non conforming",
             r"genderqueer",
         ),
-        "gender:self_describe": (
+        "self_describe": (
             r"self describe",
             r"prefer to self describe",
             r"another gender identity",
@@ -311,11 +311,10 @@ def match_regulated_option(
 def _match_standard_option(
     options: Sequence[OptionT],
     requested_option: str,
-    namespace: str,
     regulator: Regulator,
 ) -> OptionT:
     """Match a standard option value against labels used by a dropdown."""
-    requested_key = f"{namespace}:{requested_option}"
+    requested_key = requested_option
     matches = [option for option in options if regulator(option.label) == requested_key]
 
     if not matches:
@@ -338,7 +337,7 @@ def match_yes_no_option(
     requested_option: YesNoOption,
 ) -> OptionT:
     """Match a standard yes/no option against the available labels."""
-    return _match_standard_option(options, requested_option, "answer", regulate_yes_no)
+    return _match_standard_option(options, requested_option, regulate_yes_no)
 
 
 def match_veteran_option(
@@ -346,7 +345,7 @@ def match_veteran_option(
     requested_option: VeteranOption,
 ) -> OptionT:
     """Match a standard veteran-status option against the available labels."""
-    return _match_standard_option(options, requested_option, "veteran", regulate_veteran_status)
+    return _match_standard_option(options, requested_option, regulate_veteran_status)
 
 
 def match_disability_option(
@@ -357,7 +356,6 @@ def match_disability_option(
     return _match_standard_option(
         options,
         requested_option,
-        "disability",
         regulate_disability_status,
     )
 
@@ -383,7 +381,7 @@ def match_gender_option(
     requested_option: GenderOption,
 ) -> OptionT:
     """Match a standard gender option against the available labels."""
-    return _match_standard_option(options, requested_option, "gender", regulate_gender)
+    return _match_standard_option(options, requested_option, regulate_gender)
 
 
 def match_race_ethnicity_option(
@@ -394,7 +392,6 @@ def match_race_ethnicity_option(
     return _match_standard_option(
         options,
         requested_option,
-        "race",
         regulate_race_ethnicity,
     )
 

@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from job_bot.agent.planned_applier import (
-    PAGE_INSPECTION_CACHE_TTL_SECONDS,
     FormField,
     PageInspection,
     _load_page_inspections,
@@ -13,7 +12,7 @@ from job_bot.agent.planned_applier import (
     agent_flow,
     inspect_page,
 )
-from job_bot.utils.caching import AppCache
+from job_bot.utils.caching import AppRedisCache as AppCache
 from job_bot.utils.hash_helper import schema_string_key
 
 
@@ -35,40 +34,19 @@ def _form_field() -> FormField:
     )
 
 
-def test_load_page_inspections_uses_redis_cache_for_seven_days(monkeypatch) -> None:
-    class FakeRedis:
-        def __init__(self) -> None:
-            self.values: dict[str, bytes] = {}
-            self.set_calls: list[tuple[str, int | None]] = []
-
-        def get(self, key: str) -> bytes | None:
-            return self.values.get(key)
-
-        def set(self, key: str, value: bytes, px: int | None = None) -> None:
-            self.values[key] = value
-            self.set_calls.append((key, px))
-
-    redis = FakeRedis()
-    monkeypatch.setattr(AppCache, "_client", redis)
-
+def test_load_page_inspections_reads_versioned_database_records() -> None:
     inspection = PageInspection(form_fields=[_form_field()])
-    first_session = Mock()
-    first_session.scalars.return_value.all.return_value = [
+    session = Mock()
+    session.scalars.return_value.all.return_value = [
         SimpleNamespace(inspection=inspection.model_dump(mode="json"))
     ]
-    second_session = Mock()
     url = "https://example.com/apply?test=redis-cache"
     version = "test-version"
 
-    first_result = _load_page_inspections(first_session, url, version)
-    second_result = _load_page_inspections(second_session, url, version)
+    result = _load_page_inspections(session, url, version)
 
-    assert first_result == [inspection]
-    assert second_result == first_result
-    first_session.scalars.assert_called_once()
-    second_session.scalars.assert_not_called()
-    assert len(redis.set_calls) == 1
-    assert redis.set_calls[0][1] == PAGE_INSPECTION_CACHE_TTL_SECONDS * 1000
+    assert result == [inspection]
+    session.scalars.assert_called_once()
 
 
 def test_save_page_inspections_invalidates_cached_query(monkeypatch) -> None:
@@ -192,10 +170,11 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
         def page(self):
             return page
 
-    inspect = AsyncMock(return_value=[PageInspection(form_fields=[field])])
+    inspection = PageInspection(form_fields=[field])
+    inspect = AsyncMock(return_value=inspection)
     filler_factory = Mock(return_value=filler)
     monkeypatch.setattr("job_bot.agent.planned_applier.BrowserSession", FakeBrowserSession)
-    monkeypatch.setattr("job_bot.agent.planned_applier.inspect_page", inspect)
+    monkeypatch.setattr("job_bot.agent.planned_applier.inspect_active_page", inspect)
     monkeypatch.setattr("job_bot.agent.planned_applier.GreenHouseFiller", filler_factory)
     monkeypatch.setattr("job_bot.agent.planned_applier.asyncio.sleep", AsyncMock())
 
@@ -206,6 +185,6 @@ def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
         "https://example.com/apply",
         wait_until="domcontentloaded",
     )
-    filler_factory.assert_called_once_with(browser_sessions[0], user, file_set)
-    filler.apply.assert_awaited_once_with([field])
-    inspect.assert_awaited_once_with("https://example.com/apply", session)
+    inspect.assert_awaited_once_with(page)
+    filler_factory.assert_called_once_with(browser_sessions[0], user, [inspection], file_set)
+    filler.apply.assert_awaited_once_with()

@@ -84,7 +84,7 @@ py_version = 311
 
 [tool.pylint.main]
 py-version = "3.11"
-fail-under = 6.0
+fail-under = 6
 recursive = true
 
 

@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from job_bot.agent.filler import GreenHouseFiller
+from job_bot.agent.greenhouse_applier import GreenHouseFiller
 from job_bot.schemas import FormField
 
 
@@ -22,14 +22,14 @@ def test_greenhouse_filler_uses_the_active_page(monkeypatch) -> None:
     locate = Mock(return_value=locator)
     fill_text = AsyncMock()
     visible_assertion = SimpleNamespace(to_be_visible=AsyncMock())
-    monkeypatch.setattr("job_bot.agent.filler.locate_by_accessible_name", locate)
-    monkeypatch.setattr("job_bot.agent.filler.fill_text_field", fill_text)
+    monkeypatch.setattr("job_bot.agent.greenhouse_applier.locate_by_accessible_name", locate)
+    monkeypatch.setattr("job_bot.agent.greenhouse_applier.fill_text_field", fill_text)
     monkeypatch.setattr(
-        "job_bot.agent.filler.expect",
+        "job_bot.agent.greenhouse_applier.expect",
         Mock(return_value=visible_assertion),
     )
 
-    asyncio.run(GreenHouseFiller(browser_session, Mock()).fill(field, "Zizheng"))
+    asyncio.run(GreenHouseFiller(browser_session, Mock(), []).fill(field, "Zizheng"))
 
     browser_session.page.assert_called_once_with()
     locate.assert_called_once_with(page, "First Name", None)

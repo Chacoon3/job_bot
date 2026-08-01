@@ -14,5 +14,7 @@ repos:
       - id: pylint
         name: pylint
         entry: .venv/Scripts/python.exe -m pylint
+        args: [--rcfile=pyproject.toml]
         language: system
+        files: ^src/.*\.py$
         types: [python]
