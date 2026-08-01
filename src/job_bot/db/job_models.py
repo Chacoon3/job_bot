@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from job_bot.db.base import Base
+from job_bot.db.company_models import Company
 
 
 class Job(Base):
@@ -30,11 +31,16 @@ class Job(Base):
     __table_args__ = (
         UniqueConstraint("url", name="uq_jobs_url"),
         Index("idx_jobs_company_name", "company_name"),
+        Index("idx_jobs_company_id", "company_id"),
         Index("idx_jobs_date_posted", "date_posted"),
         Index("idx_jobs_source", "source"),
     )
 
     job_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("companies.company_id", ondelete="SET NULL"),
+    )
     source: Mapped[str | None] = mapped_column(
         String(64), nullable=True, default=None, server_default=text("NULL")
     )
@@ -62,6 +68,7 @@ class Job(Base):
         passive_deletes=True,
         order_by="JobPageInspection.page_index",
     )
+    company: Mapped[Company | None] = relationship()
 
 
 class JobPageInspection(Base):
