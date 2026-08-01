@@ -14,6 +14,16 @@ async def fill_text_field(
     value: str,
     canonicalizer: Callable[[str], str] | None = None,
 ) -> None:
+    """Replace and verify the value of one editable text control.
+
+    Args:
+        locator: A Playwright locator that must resolve to exactly one visible,
+            enabled, editable input or textarea.
+        value: The text to enter into the control.
+        canonicalizer: Optional function applied to both the requested and
+            retained strings before verification. Use it when the page may
+            reformat a semantically equivalent value, such as a phone number.
+    """
     count = await locator.count()
     if count != 1:
         raise LookupError(f"Expected exactly one text field, found {count}")
@@ -45,6 +55,14 @@ def locate_by_accessible_name(
     accessible_name: str,
     role: str | None = None,
 ) -> Locator:
+    """Build an exact locator for a control's accessible identity.
+
+    Args:
+        page: The active Playwright page containing the control.
+        accessible_name: The complete accessible name or associated label text.
+        role: Optional ARIA role. When provided, role-based lookup is used;
+            otherwise the control is located by its associated label.
+    """
     if role:
         return page.get_by_role(
             role,
@@ -76,6 +94,18 @@ async def extract_dropdown_options(
     *,
     timeout: float = 5_000,
 ) -> DropdownSnapshot:
+    """Inspect the options currently exposed by one dropdown control.
+
+    Args:
+        page: The active Playwright page containing any custom listbox.
+        dropdown: A locator resolving to exactly one native ``select`` or ARIA
+            ``combobox`` control.
+        timeout: Maximum milliseconds for each visibility or state wait.
+
+    Returns:
+        A snapshot describing the dropdown kind, available options, and
+        associated listbox. An autocomplete may initially contain no options.
+    """
     count = await dropdown.count()
 
     if count != 1:
@@ -106,6 +136,12 @@ async def extract_dropdown_options(
 async def _extract_native_options(
     dropdown: Locator,
 ) -> DropdownSnapshot:
+    """Read options from a native select.
+
+    Args:
+        dropdown: A locator for one native ``select`` element already checked
+            for visibility and enabled state.
+    """
     raw = await dropdown.locator("option").evaluate_all(
         """
         options => options.map((option, index) => ({
@@ -132,6 +168,13 @@ async def _extract_custom_options(
     *,
     timeout: float,
 ) -> DropdownSnapshot:
+    """Open an ARIA combobox and inspect its controlled listbox.
+
+    Args:
+        page: The active page used to resolve the controlled listbox by ID.
+        dropdown: A locator for one enabled ARIA ``combobox``.
+        timeout: Maximum milliseconds for each open and visibility wait.
+    """
     await dropdown.click(timeout=timeout)
 
     await expect(dropdown).to_have_attribute(
@@ -176,6 +219,11 @@ async def _extract_custom_options(
 
 
 async def _read_custom_options(listbox: Locator) -> list[DropdownOption]:
+    """Convert the current ARIA options within a listbox into model objects.
+
+    Args:
+        listbox: A locator for the visible ``role=listbox`` container.
+    """
     raw = await listbox.get_by_role("option").evaluate_all(
         """
         options => options.map((option, index) => {
@@ -220,6 +268,19 @@ async def select_dropdown_option(
     query: str | None = None,
     timeout: float = 5_000,
 ) -> None:
+    """Select one semantic option from a native select or custom combobox.
+
+    Args:
+        page: The active Playwright page containing the dropdown and listbox.
+        dropdown: A locator resolving to exactly one dropdown control.
+        option_label: The desired option's canonical or displayed label.
+        regulator: Optional canonicalizer applied to the desired label and all
+            displayed labels before matching.
+        query: Optional text to type when an autocomplete has no initial
+            options. Defaults to ``option_label``; callers may provide a more
+            specific query such as city, state, and country.
+        timeout: Maximum milliseconds for each dropdown state or option wait.
+    """
     snapshot = await extract_dropdown_options(
         page,
         dropdown,
@@ -300,7 +361,12 @@ async def select_dropdown_option(
 
 
 def _infer_field_key(field: dict[str, Any]) -> str:
-    """Infer common application-field keys from live DOM metadata."""
+    """Infer a common application-field key from live DOM metadata.
+
+    Args:
+        field: Raw control metadata produced by :func:`inspect_active_page`,
+            including names, labels, element type, and group information.
+    """
     name = " ".join(
         str(field.get(key) or "")
         for key in ("accessible_name", "input_name", "element_id", "placeholder")
@@ -353,6 +419,13 @@ async def inspect_active_page(page: Page) -> PageInspection:
     The browser computes DOM- and accessibility-derived facts in one pass.  No
     network lookup or language-model inference is involved, so the returned
     roles and element identities describe the same page that will be filled.
+
+    Args:
+        page: The active Playwright page whose top-level document should be
+            inspected for interactive application controls.
+
+    Returns:
+        Validated metadata for every discovered interactive control.
     """
     raw_fields = await page.evaluate(
         r"""
