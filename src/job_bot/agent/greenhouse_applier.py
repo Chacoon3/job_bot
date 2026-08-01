@@ -2,7 +2,7 @@ import random
 import re
 from typing import Any
 
-from playwright.async_api import Locator, Page, expect
+from playwright.async_api import expect
 from structlog import get_logger
 from structlog.contextvars import bind_contextvars, unbind_contextvars
 
@@ -10,13 +10,12 @@ from job_bot.agent.dropdown_regulator import get_dropdown_regulator_by_field_key
 from job_bot.agent.file_upload import upload_greenhouse_cover_letter, upload_greenhouse_resume
 from job_bot.agent.filler import BaseApplier
 from job_bot.agent.filler_tools import (
-    extract_dropdown_options,
     fill_text_field,
     inspect_active_page,
+    llm_infer_correct_dropdown_option,
     locate_by_accessible_name,
     select_dropdown_option,
 )
-from job_bot.openai_client import get_async_openai_client
 from job_bot.schemas import FormField, JobFormFieldKey
 
 
@@ -99,13 +98,6 @@ def _has_correct_value(field: FormField, expected_value: object) -> bool:
     return False
 
 
-async def _llm_infer_country_dropdown_option(
-    page: Page, locator: Locator, expected_value: str
-) -> str | None:
-    model = get_async_openai_client()
-    dropdown_options = await extract_dropdown_options(page, locator)
-
-
 class GreenHouseFiller(BaseApplier):
 
     def get_answer(self, field_key: JobFormFieldKey) -> Any:
@@ -151,15 +143,17 @@ class GreenHouseFiller(BaseApplier):
             field.role,
         )
 
-        get_logger().info(
-            "Filling dropdown field",
-            field_name=field.accessible_name,
-            field_value=value,
-        )
-
         query = value
         if field.field_key == "city":
-            query = ", ".join(part for part in (value, self.user.state, self.user.country) if part)
+            option_to_select = await llm_infer_correct_dropdown_option(
+                self.browser_session.page(),
+                dropdown_locator,
+                value,
+            )
+            if option_to_select:
+                query = option_to_select.label
+            else:
+                raise ValueError(f"Could not find a suitable option for city: {value}")
 
         await select_dropdown_option(
             self.browser_session.page(),
@@ -259,7 +253,7 @@ class GreenHouseFiller(BaseApplier):
                     await filler(field, answer)
                     get_logger().info("Field filled successfully", field_value=str(answer)[:5])
                 except Exception as e:
-                    get_logger().error("Error filling field", error=str(e))
+                    get_logger().error("Error filling field", error=str(e)[:100])
                 finally:
                     unbind_contextvars(
                         "field_key", "accessible_name", "interaction_kind", "input_type"

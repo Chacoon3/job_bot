@@ -3,7 +3,7 @@ import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from job_bot.agent.filler_tools import fill_text_field, select_dropdown_option
+from job_bot.agent.filler_tools import _infer_field_key, fill_text_field, select_dropdown_option
 from job_bot.schemas import DropdownSnapshot
 
 
@@ -21,6 +21,23 @@ def test_fill_text_field_accepts_canonical_phone_match() -> None:
             canonicalizer=lambda value: re.sub(r"\D", "", value),
         )
     )
+
+
+def test_infer_field_key_treats_phone_sms_prompt_as_communications_consent() -> None:
+    field_key = _infer_field_key(
+        {
+            "accessible_name": (
+                "By selecting YES, I consent to receive recruiting SMS messages from "
+                "PerfectServe at the phone number provided on my job application."
+            ),
+            "input_name": "question_123",
+            "element_id": "question_123",
+            "input_type": "text",
+            "interaction_strategy": "select_combobox",
+        }
+    )
+
+    assert field_key == "communications_consent"
 
 
 def test_select_dropdown_option_queries_an_empty_autocomplete(monkeypatch) -> None:

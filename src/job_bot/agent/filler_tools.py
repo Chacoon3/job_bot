@@ -5,8 +5,11 @@ from typing import Any
 
 from playwright.async_api import Page, expect
 
+from job_bot.openai_client import get_async_openai_client
 from job_bot.schemas import DropdownOption, DropdownSnapshot, FormField, PageInspection
 from job_bot.utils.browser_tools import Locator
+from job_bot.utils.caching import AppRedisCache
+from job_bot.utils.hash_helper import schema_string_key
 
 
 async def fill_text_field(
@@ -375,6 +378,13 @@ def _infer_field_key(field: dict[str, Any]) -> str:
     tag = str(field.get("tag") or "").casefold()
     input_type = str(field.get("input_type") or "").casefold()
 
+    # Consent questions often mention the applicant's phone number while asking
+    # for a Yes/No communications preference. Classify their purpose before the
+    # broader contact-field rules inspect words such as "phone" or "telephone".
+    if "consent" in name and any(
+        marker in name for marker in ("communication", "sms", "text message", "phone message")
+    ):
+        return "communications_consent"
     if "country" in name and "phone" in group:
         return "phone_country"
     if input_type == "tel":
@@ -556,3 +566,54 @@ async def inspect_active_page(page: Page) -> PageInspection:
         raw_field["field_key"] = _infer_field_key(raw_field)
         fields.append(FormField.model_validate(raw_field))
     return PageInspection(form_fields=fields)
+
+
+@AppRedisCache.cached(
+    key_builder=lambda page, locator, exp_val: schema_string_key("page_inspections", page.url),
+    ttl=60 * 60 * 24 * 7,  # 1 week
+)
+async def llm_infer_correct_dropdown_option(
+    page: Page,
+    locator: Locator,
+    expected_value: str,
+) -> str | None:
+    """Use an LLM to infer the correct option for a dropdown.
+
+    Args:
+        page: The active Playwright page containing the dropdown.
+        locator: A locator resolving to exactly one native select or ARIA
+            combobox.
+        expected_value: The canonical value that should be selected, such as
+            "United States" or "California".
+
+    Returns:
+        The label of the inferred option, or None if no match could be found.
+    """
+    model = get_async_openai_client()
+    dropdown_options = await extract_dropdown_options(page, locator)
+    resp = await model.responses.create(
+        model=model.model_name,
+        input=[
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert in playwright browser automation and web accessibility. "
+                    "You are given a dropdown control with a set of options. "
+                    "You are also given a canonical value that should be selected. "
+                    "Your task is to determine which option best matches the canonical value. "
+                    "Return only the label of the best matching option, or 'None' if no match."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Given the canonical value '{expected_value}', "
+                    f"and the following dropdown options: {dropdown_options.options}, "
+                    "which option should be selected? "
+                    "Return only the label of the best matching option, or 'None' if no match."
+                ),
+            },
+        ],
+    )
+
+    return resp.text
