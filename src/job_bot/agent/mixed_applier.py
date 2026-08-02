@@ -22,12 +22,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from structlog import get_logger
 
-from job_bot.agent.filler_tools import inspect_active_page
 from job_bot.agent.greenhouse_applier import GreenHouseFiller
 from job_bot.db.job_models import Job, JobPageInspection
 from job_bot.openai_client import get_async_openai_client
 from job_bot.schemas import ApplicationFileSet, FormField, PageInspection, User
-from job_bot.utils.browser_tools import BrowserSession
 from job_bot.utils.caching import AppRedisCache
 from job_bot.utils.decorators import log_upon_exit
 from job_bot.utils.file_upload import UploadableFile
@@ -270,18 +268,11 @@ async def agent_flow(
     playwright: Playwright,
     user: User,
     file_set: ApplicationFileSet,
-    session: Session,
 ) -> None:
 
-    async with BrowserSession(playwright, False) as browser_session:
-        page = browser_session.page()
-
-        await page.goto(url, wait_until="domcontentloaded")
-        res = await inspect_active_page(page)
-        await asyncio.sleep(3)
-        filler = GreenHouseFiller(browser_session, user, [res], file_set)
-        await filler.apply()
-        await asyncio.sleep(30)  # Adjust the duration as needed
+    filler = GreenHouseFiller(playwright, user, url, file_set)
+    await filler.apply()
+    await asyncio.sleep(30)  # Adjust the duration as needed
 
 
 def route_after_inspection(state: _AgentState, context: _AgentContext) -> str:

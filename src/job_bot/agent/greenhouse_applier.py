@@ -1,3 +1,4 @@
+import asyncio
 import random
 import re
 from typing import Any
@@ -6,9 +7,9 @@ from playwright.async_api import expect
 from structlog import get_logger
 from structlog.contextvars import bind_contextvars, unbind_contextvars
 
+from job_bot.agent.applier import BaseApplier
 from job_bot.agent.dropdown_regulator import get_dropdown_regulator_by_field_key
 from job_bot.agent.file_upload import upload_greenhouse_cover_letter, upload_greenhouse_resume
-from job_bot.agent.filler import BaseApplier
 from job_bot.agent.filler_tools import (
     fill_text_field,
     inspect_active_page,
@@ -226,57 +227,65 @@ class GreenHouseFiller(BaseApplier):
 
     async def apply(self) -> None:
 
-        all_fields_filled = False
-        max_loop = 3
-        while not all_fields_filled and max_loop > 0:
-            page_inspection = await inspect_active_page(self.browser_session.page())
+        async with self.browser_session as browser_session:
+            page = browser_session.page()
 
-            for field in page_inspection.form_fields:
-                try:
-                    bind_contextvars(
-                        field_key=field.field_key,
-                        accessible_name=field.accessible_name,
-                        interaction_kind=field.interaction_strategy,
-                        input_type=field.input_type,
+            await page.goto(self.job_url, wait_until="domcontentloaded")
+            await asyncio.sleep(3)
+            all_fields_filled = False
+            max_loop = 3
+            while not all_fields_filled and max_loop > 0:
+                page_inspection = await inspect_active_page(browser_session.page())
+
+                for field in page_inspection.form_fields:
+                    try:
+                        bind_contextvars(
+                            field_key=field.field_key,
+                            accessible_name=field.accessible_name,
+                            interaction_kind=field.interaction_strategy,
+                            input_type=field.input_type,
+                        )
+
+                        if (
+                            field.field_key == "application-irrelevant"
+                            or field.field_key == "unknown"
+                        ):
+                            get_logger().info("Skipping not supported field")
+                            continue
+
+                        answer = self.get_answer(field.field_key)
+                        # check if already filled with correct answer
+                        if _has_correct_value(field, answer):
+                            continue
+
+                        filler = getattr(self, field.interaction_strategy, None)
+                        if filler is None:
+                            raise ValueError("No filler found for interaction kind.")
+
+                        await filler(field, answer)
+                        get_logger().info("Field filled successfully", field_value=str(answer)[:5])
+                    except Exception as e:
+                        get_logger().error("Error filling field", error=str(e)[:100])
+                    finally:
+                        unbind_contextvars(
+                            "field_key", "accessible_name", "interaction_kind", "input_type"
+                        )
+
+                completed_inspection = await inspect_active_page(browser_session.page())
+                field_correctness = {
+                    field.field_key: (
+                        _has_correct_value(field, self.get_answer(field.field_key)),
+                        self.get_answer(field.field_key),
+                        field.current_value,
                     )
-
-                    if field.field_key == "application-irrelevant" or field.field_key == "unknown":
-                        get_logger().info("Skipping not supported field")
-                        continue
-
-                    answer = self.get_answer(field.field_key)
-                    # check if already filled with correct answer
-                    if _has_correct_value(field, answer):
-                        continue
-
-                    filler = getattr(self, field.interaction_strategy, None)
-                    if filler is None:
-                        raise ValueError("No filler found for interaction kind.")
-
-                    await filler(field, answer)
-                    get_logger().info("Field filled successfully", field_value=str(answer)[:5])
-                except Exception as e:
-                    get_logger().error("Error filling field", error=str(e)[:100])
-                finally:
-                    unbind_contextvars(
-                        "field_key", "accessible_name", "interaction_kind", "input_type"
-                    )
-
-            completed_inspection = await inspect_active_page(self.browser_session.page())
-            field_correctness = {
-                field.field_key: (
-                    _has_correct_value(field, self.get_answer(field.field_key)),
-                    self.get_answer(field.field_key),
-                    field.current_value,
+                    for field in completed_inspection.form_fields
+                }
+                get_logger().debug(
+                    "Field correctness after filling attempt", field_correctness=field_correctness
                 )
-                for field in completed_inspection.form_fields
-            }
-            get_logger().debug(
-                "Field correctness after filling attempt", field_correctness=field_correctness
-            )
-            all_fields_filled = all(field_correctness.values())
+                all_fields_filled = all(field_correctness.values())
 
-            await self.browser_session.page().wait_for_timeout(
-                random.randint(100, 1500)
-            )  # Wait for 1 second before re-inspecting the page
-            max_loop -= 1
+                await browser_session.page().wait_for_timeout(
+                    random.randint(100, 1500)
+                )  # Wait for 1 second before re-inspecting the page
+                max_loop -= 1

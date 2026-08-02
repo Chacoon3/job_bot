@@ -1,21 +1,24 @@
 from abc import ABC, abstractmethod
 
-from job_bot.schemas import ApplicationFileSet, FormField, PageInspection, User
+from playwright.async_api import Playwright
+
+from job_bot.schemas import ApplicationFileSet, FormField, User
 from job_bot.utils.browser_tools import BrowserSession
 
 
 class BaseApplier(ABC):
     def __init__(
         self,
-        browser_session: BrowserSession,
+        playwright: Playwright,
         user: User,
-        page_inspections: list[PageInspection],
+        job_url: str,
         file_set: ApplicationFileSet | None = None,
     ) -> None:
-        self.browser_session = browser_session
+        self.playwright = playwright
+        self.browser_session = BrowserSession(playwright)
+        self.job_url = job_url
         self.user = user
         self.file_set = file_set
-        self.page_inspection = page_inspections
 
     @abstractmethod
     async def fill(self, field: FormField, value: str) -> None: ...

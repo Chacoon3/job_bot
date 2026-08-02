@@ -1,7 +1,7 @@
 import asyncio
 from unittest.mock import AsyncMock
 
-from job_bot.agent.planned_applier import inspect_active_page
+from job_bot.agent.filler_tools import inspect_active_page
 
 
 def test_inspect_active_page_builds_validated_form_fields() -> None:

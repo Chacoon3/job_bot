@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 from typing import Annotated, Any
 
@@ -5,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from playwright.async_api import async_playwright
 from sqlalchemy.orm import Session
 
-from job_bot.agent.planned_applier import agent_flow
+from job_bot.agent.greenhouse_applier import GreenHouseFiller
 from job_bot.agent.react_applier import apply_for_job
 from job_bot.api.dependencies import get_session
 from job_bot.db.app_redis import AppRedisAsync
@@ -49,8 +50,9 @@ async def inspect(
     user = user_from_record(record)
 
     async with async_playwright() as playwright:
-        await agent_flow(job_url, playwright, user, application_file_set, session)
-
+        filler = GreenHouseFiller(playwright, user, job_url, application_file_set)
+        await filler.apply()
+        await asyncio.sleep(30)
     # pause the execution
 
 
