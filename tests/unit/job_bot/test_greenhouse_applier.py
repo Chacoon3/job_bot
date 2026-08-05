@@ -1,5 +1,5 @@
 from job_bot.agent.greenhouse_applier import _has_correct_value
-from job_bot.schemas import FormField, FormOption
+from job_bot.schemas import FormField, FormOption, InspectedFile, UploadableFile
 
 
 def _field(**overrides: object) -> FormField:
@@ -91,3 +91,62 @@ def test_has_correct_value_checks_boolean_controls() -> None:
 
     assert _has_correct_value(checked, True)
     assert not _has_correct_value(checked, False)
+
+
+def test_has_correct_value_compares_uploaded_file_content() -> None:
+    expected = UploadableFile(
+        filename="expected.pdf",
+        content=b"same PDF bytes",
+        mime_type="application/pdf",
+    )
+    field = _field(
+        field_key="attach_resume_button",
+        interaction_strategy="upload_file",
+        input_type="file",
+        current_value=r"C:\fakepath\different-name.pdf",
+        uploaded_file=InspectedFile(
+            filename="different-name.pdf",
+            content=b"same PDF bytes",
+            mime_type="application/pdf",
+            size=14,
+        ),
+    )
+
+    assert _has_correct_value(field, expected)
+
+
+def test_has_correct_value_rejects_missing_or_different_uploaded_content() -> None:
+    expected = UploadableFile(
+        filename="resume.pdf",
+        content=b"expected bytes",
+        mime_type="application/pdf",
+    )
+    missing = _field(
+        field_key="attach_resume_button",
+        interaction_strategy="upload_file",
+        input_type="file",
+    )
+    different = missing.model_copy(
+        update={
+            "uploaded_file": InspectedFile(
+                filename="resume.pdf",
+                content=b"different bytes",
+                mime_type="application/pdf",
+                size=15,
+            )
+        }
+    )
+
+    assert not _has_correct_value(missing, expected)
+    assert not _has_correct_value(different, expected)
+
+
+def test_has_correct_value_rejects_missing_required_upload() -> None:
+    field = _field(
+        field_key="attach_resume_button",
+        interaction_strategy="upload_file",
+        input_type="file",
+        required=True,
+    )
+
+    assert not _has_correct_value(field, None)

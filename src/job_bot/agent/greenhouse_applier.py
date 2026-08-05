@@ -15,7 +15,8 @@ from job_bot.agent.filler_tools import (
     locate_by_accessible_name,
     select_dropdown_option,
 )
-from job_bot.schemas import FormField, JobFormFieldKey, YesNoOption
+from job_bot.schemas import FormField, JobFormFieldKey, UploadableFile, YesNoOption
+from job_bot.utils.file_tools import is_same_file_content
 
 
 def _canonicalize_phone_number(value: object) -> str:
@@ -32,6 +33,16 @@ def _has_correct_value(field: FormField, expected_value: object) -> bool:
     # that can be validated as application answers.
     if field.interaction_strategy == "click":
         return True
+
+    if field.interaction_strategy == "upload_file":
+        if expected_value is None:
+            return not field.required
+        if not isinstance(expected_value, UploadableFile) or field.uploaded_file is None:
+            return False
+        return is_same_file_content(
+            field.uploaded_file.content,
+            expected_value.content,
+        )
 
     if expected_value is None:
         return True
@@ -101,6 +112,12 @@ class GreenHouseFiller(BaseApplier):
 
     def get_answer(self, field_key: JobFormFieldKey) -> Any:
         """Get the answer for a given field key."""
+        if field_key in {"attach_resume_button", "attach_cover_letter_button"}:
+            if self.file_set is None:
+                return None
+            if field_key == "attach_resume_button":
+                return self.file_set.resume
+            return self.file_set.cover_letter
         return getattr(self.user, field_key, None)
 
     async def fill(self, field: FormField, value: str) -> None:
@@ -246,6 +263,7 @@ class GreenHouseFiller(BaseApplier):
                             accessible_name=field.accessible_name,
                             interaction_kind=field.interaction_strategy,
                             input_type=field.input_type,
+                            field_required=field.required,
                         )
 
                         if (

@@ -25,10 +25,9 @@ from job_bot.agent.greenhouse_applier import GreenHouseFiller
 from job_bot.config import settings
 from job_bot.db.job_models import Job, JobPageInspection
 from job_bot.openai_client import get_async_openai_client
-from job_bot.schemas import ApplicationFileSet, FormField, PageInspection, User
+from job_bot.schemas import ApplicationFileSet, FormField, PageInspection, UploadableFile, User
 from job_bot.utils.caching import AppRedisCache
 from job_bot.utils.decorators import log_upon_exit
-from job_bot.utils.file_upload import UploadableFile
 from job_bot.utils.hash_helper import schema_string_key
 
 PAGE_INSPECTION_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60

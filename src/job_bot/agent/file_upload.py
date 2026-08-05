@@ -13,7 +13,7 @@ from playwright.async_api import (
     expect,
 )
 
-from job_bot.utils.file_upload import UploadableFile
+from job_bot.schemas import UploadableFile
 
 FileSource: TypeAlias = str | PathLike[str] | UploadableFile
 

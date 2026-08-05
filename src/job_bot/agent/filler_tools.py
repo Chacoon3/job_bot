@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import inspect
 import json
@@ -446,7 +447,7 @@ async def inspect_page(page: Page) -> PageInspection:
     """
     raw_fields = await page.evaluate(
         r"""
-        () => {
+        async () => {
           const clean = value => (value || '').replace(/\s+/g, ' ').trim();
           const textByIds = value => clean(value).split(' ').filter(Boolean)
             .map(id => document.getElementById(id))
@@ -470,7 +471,7 @@ async def inspect_page(page: Page) -> PageInspection:
           ).replace(/\s*\*\s*$/, '');
           const groupFor = element => {
             const group = element.closest('fieldset, [role="group"]');
-            if (!group) return {key: null, label: null};
+            if (!group) return {key: null, label: null, required: false};
             const legend = group.querySelector(':scope > legend');
             const referenced = textByIds(group.getAttribute('aria-labelledby'));
             return {
@@ -480,13 +481,23 @@ async def inspect_page(page: Page) -> PageInspection:
                 || referenced.join(' ')
                 || (legend && (legend.innerText || legend.textContent))
               ) || null,
+              required: group.getAttribute('aria-required') === 'true',
             };
           };
           const controls = document.querySelectorAll(
             'input, textarea, select, button, a[href], [contenteditable="true"], [role="combobox"]'
           );
 
-          return [...new Set(controls)].map(element => {
+          const bytesToBase64 = bytes => {
+            let binary = '';
+            const chunkSize = 0x8000;
+            for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+              binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+            }
+            return btoa(binary);
+          };
+
+          return Promise.all([...new Set(controls)].map(async element => {
             const tag = element.tagName.toLowerCase();
             const role = element.getAttribute('role');
             const type = element.getAttribute('type');
@@ -520,6 +531,15 @@ async def inspect_page(page: Page) -> PageInspection:
               : isCombobox && selectedComboboxValue
                 ? clean(selectedComboboxValue.innerText || selectedComboboxValue.textContent)
                 : 'value' in element ? element.value || null : null;
+            const selectedFile = type === 'file' ? element.files?.[0] : null;
+            const uploadedFile = selectedFile ? {
+              filename: selectedFile.name,
+              mime_type: selectedFile.type || 'application/octet-stream',
+              size: selectedFile.size,
+              content_base64: bytesToBase64(
+                new Uint8Array(await selectedFile.arrayBuffer())
+              ),
+            } : null;
 
             return {
               interaction_strategy: interactionStrategy,
@@ -534,6 +554,7 @@ async def inspect_page(page: Page) -> PageInspection:
               labels,
               placeholder: element.getAttribute('placeholder'),
               current_value: value,
+              uploaded_file: uploadedFile,
               options: isNativeSelect ? [...element.options].map(option => ({
                 label: clean(option.label || option.textContent),
                 value: option.value || null,
@@ -541,7 +562,9 @@ async def inspect_page(page: Page) -> PageInspection:
                 disabled: option.disabled,
               })) : [],
               required: Boolean(
-                element.required || element.getAttribute('aria-required') === 'true'
+                element.required
+                || element.getAttribute('aria-required') === 'true'
+                || group.required
               ),
               visible: Boolean(element.getClientRects().length),
               enabled: !Boolean(
@@ -563,7 +586,7 @@ async def inspect_page(page: Page) -> PageInspection:
               frame_url: window.location.href,
               frame_name: window.name || null,
             };
-          });
+          }));
         }
         """
     )
@@ -571,6 +594,12 @@ async def inspect_page(page: Page) -> PageInspection:
     fields: list[FormField] = []
     for raw_field in raw_fields:
         raw_field["field_key"] = _infer_field_key(raw_field)
+        uploaded_file = raw_field.get("uploaded_file")
+        if uploaded_file is not None:
+            uploaded_file["content"] = base64.b64decode(
+                uploaded_file.pop("content_base64"),
+                validate=True,
+            )
         fields.append(FormField.model_validate(raw_field))
     return PageInspection(form_fields=fields)
 

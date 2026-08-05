@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from job_bot.countries import regulate_country, regulate_phone_country_code
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import Job
-from job_bot.utils.file_upload import UploadableFile
 
 
 class JobEntrySchema(BaseModel):
@@ -286,6 +285,15 @@ class FormOption(BaseModel):
     disabled: bool = False
 
 
+class InspectedFile(BaseModel):
+    """Content and metadata read from a browser file input."""
+
+    filename: str
+    content: bytes = Field(repr=False)
+    mime_type: str
+    size: int = Field(ge=0)
+
+
 class FormField(BaseModel):
     # 内部稳定标识，不一定等于 DOM id
     field_key: JobFormFieldKey | None = None
@@ -309,6 +317,7 @@ class FormField(BaseModel):
 
     # 控件数据
     current_value: str | bool | list[str] | None = None
+    uploaded_file: InspectedFile | None = None
     options: list[FormOption] = Field(default_factory=list)
 
     # 控件状态
@@ -374,6 +383,16 @@ class DropdownSnapshot(BaseModel):
     complete: bool | None = None
 
     listbox_id: str | None = None
+
+
+class UploadableFile(BaseModel):
+    """A user-provided file that can be uploaded without writing it to disk."""
+
+    model_config = ConfigDict(frozen=True)
+
+    filename: str = Field(min_length=1)
+    content: bytes = Field(min_length=1, repr=False)
+    mime_type: str = Field(default="application/octet-stream", min_length=1)
 
 
 class ApplicationFileSet(BaseModel):

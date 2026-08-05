@@ -7,6 +7,7 @@ from job_bot.agent.filler_tools import (
     _dropdown_option_cache_key,
     _infer_field_key,
     fill_text_field,
+    inspect_page,
     llm_infer_correct_dropdown_option,
     select_dropdown_option,
 )
@@ -92,6 +93,38 @@ def test_infer_field_key_only_classifies_resume_file_input_as_attachment() -> No
             )
             == "unknown"
         )
+
+
+def test_inspect_page_decodes_selected_file_content() -> None:
+    page = AsyncMock()
+    page.evaluate.return_value = [
+        {
+            "tag": "input",
+            "input_type": "file",
+            "interaction_strategy": "upload_file",
+            "control_kind": "input",
+            "element_id": "resume",
+            "accessible_name": "Attach",
+            "group_label": "Resume/CV",
+            "current_value": r"C:\fakepath\resume.pdf",
+            "required": True,
+            "uploaded_file": {
+                "filename": "resume.pdf",
+                "mime_type": "application/pdf",
+                "size": 12,
+                "content_base64": "cmVzdW1lIGJ5dGVz",
+            },
+        }
+    ]
+
+    inspection = asyncio.run(inspect_page(page))
+    field = inspection.form_fields[0]
+
+    assert field.field_key == "attach_resume_button"
+    assert field.uploaded_file is not None
+    assert field.uploaded_file.filename == "resume.pdf"
+    assert field.uploaded_file.content == b"resume bytes"
+    assert field.required
 
 
 def test_dropdown_option_cache_key_uses_bound_arguments() -> None:

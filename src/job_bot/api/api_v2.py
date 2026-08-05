@@ -1,4 +1,3 @@
-import hashlib
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -6,14 +5,10 @@ from playwright.async_api import async_playwright
 from sqlalchemy.orm import Session
 
 from job_bot.agent.greenhouse_applier import GreenHouseFiller
-from job_bot.agent.react_applier import apply_for_job
 from job_bot.api.dependencies import get_session
-from job_bot.db.app_redis import AppRedisAsync
-from job_bot.llm import OpenAILLMProvider
-from job_bot.schemas import ApplicationFileSet, User
+from job_bot.schemas import ApplicationFileSet
 from job_bot.users import canonical_email, get_user, user_from_record
-from job_bot.utils.file_upload import extract_uploadable_file, parse_pure_text_pdf
-from job_bot.utils.resume_parser import ai_parse_resume
+from job_bot.utils.file_tools import extract_uploadable_file
 
 router = APIRouter(prefix="/apiv2", tags=["job_bot"])
 
@@ -52,32 +47,3 @@ async def inspect(
         filler = GreenHouseFiller(playwright, user, job_url, application_file_set)
         await filler.apply()
     # pause the execution
-
-
-async def api_apply(request: Request):
-    form = await request.form()
-    job_url = form.get("job_url")
-    uploadable = await extract_uploadable_file(request)
-    # Read file content
-    content = uploadable.content
-
-    profile_hash = hashlib.sha256(content).hexdigest()
-
-    profile_hash_key = f"resume:{profile_hash}"
-    # check if the content has been processed before in redis
-    profile_json = await AppRedisAsync.get(profile_hash_key)
-    if profile_json:
-        profile = User.model_validate_json(profile_json)
-    else:
-        if uploadable.filename.endswith(".pdf"):
-            resume_str = parse_pure_text_pdf(content)
-        # elif uploadable.filename.endswith((".doc", ".docx")):
-        #     resume_str = parse_pure_text_word(content)
-        else:
-            return {"error": "Unsupported file type"}
-
-        profile = ai_parse_resume(resume_str)
-        await AppRedisAsync.set(profile_hash_key, profile.model_dump_json())
-
-    res = await apply_for_job(job_url, profile, uploadable, model_provider=OpenAILLMProvider())
-    return res

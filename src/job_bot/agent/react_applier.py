@@ -17,10 +17,9 @@ from structlog import get_logger
 from job_bot.adt import JobAgentContext
 from job_bot.agent.prompts import JOB_APPSYS_MSG_TEXT
 from job_bot.llm import LLMProvider
-from job_bot.schemas import User
+from job_bot.schemas import UploadableFile, User
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 from job_bot.utils.decorators import log_upon_exit
-from job_bot.utils.file_upload import UploadableFile
 
 
 class ApplicationStatus(StrEnum):
