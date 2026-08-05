@@ -1,14 +1,17 @@
+from functools import cache
 from operator import add
 from typing import Annotated
 
 from langchain.chat_models import BaseChatModel
-from langchain.messages import AnyMessage, ToolMessage
+from langchain.messages import AnyMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_community.tools import BaseTool
-from langgraph.graph import END, StateGraph, add_messages
-from langgraph.runtime import Runtime
-from pydantic import BaseModel
+from langgraph.graph import END, START, StateGraph, add_messages
+from langgraph.graph.state import CompiledStateGraph
+from pydantic import BaseModel, ConfigDict
 from structlog import get_logger
 
+from job_bot.config import settings
+from job_bot.schemas import FormField, User
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 
 
@@ -29,12 +32,14 @@ class _Runtime(BaseModel):
     A Pydantic model that holds the runtime information of the application process.
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     browser_session: BrowserSession
     model: BaseChatModel
-    tool_registry: dict[str, callable] = {}
+    tool_registry: dict[str, BaseTool] = {}
 
 
-def _act(state: _State, runtime: _Runtime) -> _State:
+async def _act(state: _State, runtime: _Runtime) -> _State:
     """
     Performs an action in the application process.
 
@@ -49,13 +54,13 @@ def _act(state: _State, runtime: _Runtime) -> _State:
     # Here you would implement the logic to perform an action based on the current state and runtime.
     # This could involve interacting with the browser session, sending messages to the model, etc.
 
-    resp = runtime.model.invoke(state.messages)
-    return _State(messages=state.messages + [resp], call_count=1)
+    resp = await runtime.model.ainvoke(state.messages)
+    return _State(messages=[resp], call_count=1)
 
 
 async def _use_tool(
     state: _State,
-    runtime: Runtime[_Runtime],
+    runtime: _Runtime,
 ) -> _State:
     last_message = state.messages[-1]
 
@@ -66,7 +71,7 @@ async def _use_tool(
     failed_calls = 0
 
     for tool_call in last_message.tool_calls:
-        tool: BaseTool = runtime.context.tool_registry.get(tool_call["name"])
+        tool: BaseTool = runtime.tool_registry.get(tool_call["name"])
         if tool is None:
             result = f"Tool not found: {tool_call['name']}"
             failed_calls += 1
@@ -114,14 +119,14 @@ def post_act_router(state: _State) -> str:
     if not state.messages:
         raise RuntimeError("Agent state contains no messages.")
 
-    if state.failure_count >= MAX_CONSECUTIVE_FAILURES:
+    if state.failure_count >= settings().AGENT_MAX_FAILURES:
         get_logger().warning(
-            "Too many consecutive failures. Ending the application process.",
-            consecutive_failures=state.failure_count,
+            "Too many failures. Ending the application process.",
+            failure_count=state.failure_count,
         )
         return END
 
-    if state.call_count >= MAX_MODEL_ACTIONS:
+    if state.call_count >= settings().AGENT_MAX_ACTIONS:
         get_logger().warning(
             "Too many model actions. Ending the application process.",
             action_count=state.call_count,
@@ -133,12 +138,37 @@ def post_act_router(state: _State) -> str:
     if last_message.type == "ai" and last_message.tool_calls:
         return "use_tool"
 
-    return "evaluate"
+    return END
 
 
-def build_applier_agent(
-    model: BaseChatModel, browser_session: BrowserSession
-) -> tuple[_State, _Runtime]:
+def post_tool_router(state: _State) -> str:
+    if not state.messages:
+        raise RuntimeError("Agent state contains no messages.")
+
+    if state.failure_count >= settings().AGENT_MAX_FAILURES:
+        get_logger().warning(
+            "Too many failures. Ending the application process.",
+            failure_count=state.failure_count,
+        )
+        return END
+
+    if state.tool_call_count >= settings().AGENT_MAX_ACTIONS:
+        get_logger().warning(
+            "Too many tool actions. Ending the application process.",
+            action_count=state.tool_call_count,
+        )
+        return END
+
+    last_message = state.messages[-1]
+
+    if last_message.type == "ai" and last_message.tool_calls:
+        return "use_tool"
+
+    return END
+
+
+@cache
+def build_applier_agent() -> CompiledStateGraph[_State, _Runtime]:
     """
     Builds the applier agent with the given model and browser session.
 
@@ -149,10 +179,48 @@ def build_applier_agent(
     Returns:
         tuple[_State, _Runtime]: The initial state and runtime of the applier agent.
     """
-
-    model = model.bind_tools(build_browser_tools(browser_session))
     graph = StateGraph(_State, _Runtime)
     graph.add_node("act", _act)
     graph.add_node("use_tool", _use_tool)
+    graph.add_edge(START, "act")
+    graph.add_conditional_edges("act", post_act_router)
+    graph.add_edge("use_tool", "act")
 
-    runtime = _Runtime(browser_session=browser_session, model=model, tool_registry=model.tools)
+    agent = graph.compile()
+    return agent
+
+
+async def agent_fill_interactive_element(
+    model: BaseChatModel, browser_session: BrowserSession, field: FormField, user: User
+) -> _State:
+    """
+    Ask the agent to fill an interactive form element on a web page.
+
+    Args:
+        model (BaseChatModel): The chat model to use for the agent.
+        browser_session (BrowserSession): The browser session to use for the agent.
+
+    Returns:
+        _Runtime: The runtime for the agent.
+    """
+
+    tools = build_browser_tools(browser_session)
+    model_with_tools = model.bind_tools(tools)
+    tool_registry = {tool.name: tool for tool in tools}
+    runtime = _Runtime(
+        browser_session=browser_session, model=model_with_tools, tool_registry=tool_registry
+    )
+
+    state = _State(
+        messages=[
+            SystemMessage(
+                content="You are a careful browser automation agent. Use only supplied candidate data, never invent answers, and report missing required information."
+            ),
+            HumanMessage(
+                content=f"Fill the form field: {field.model_dump_json(indent=2)} with the following user data: {user.model_dump_json(indent=2)}"
+            ),
+        ]
+    )
+
+    resp = await build_applier_agent().ainvoke(state, runtime=runtime)
+    return resp

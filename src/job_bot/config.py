@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     GCS_READ_ONLY_SCOPE: str = "https://www.googleapis.com/auth/devstorage.read_only"
     ENV: str | None = None
 
+    AGENT_MAX_RETRIES: int = 3
+    AGENT_MAX_FAILURES: int = 5
+    AGENT_MAX_ACTIONS: int = 20
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
@@ -53,7 +57,7 @@ class Settings(BaseSettings):
 
 
 def settings() -> Settings:
-    return Settings(_env_file=None)
+    return Settings()
 
 
 def setting_value(name: str) -> str | None:

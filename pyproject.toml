@@ -106,6 +106,7 @@ disable = [
     "R0917",  # Too many pos vars
     "R0911",  # Too many return statements
     "E1121",
+    "E1101",
 ]
 
 [tool.pylint.format]
