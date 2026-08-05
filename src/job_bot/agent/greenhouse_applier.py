@@ -316,7 +316,8 @@ class GreenHouseFiller(BaseApplier):
                 None,
             )
             if submit_button is not None:
-                await submit_button.click()
+                await self.click(submit_button)
+                await asyncio.sleep(3)  # Wait for 3 seconds to allow the submission to
                 get_logger().info("Submit button clicked successfully.")
             raise IncompleteApplicationError(
                 "All required fields filled, but submission button not found."
