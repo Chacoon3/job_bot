@@ -15,7 +15,10 @@ from job_bot.agent.filler_tools import (
     locate_by_accessible_name,
     select_dropdown_option,
 )
+from job_bot.exceptions import IncompleteApplicationError
 from job_bot.schemas import FormField, JobFormFieldKey, UploadableFile, YesNoOption
+from job_bot.utils.browser_tools import BrowserSession
+from job_bot.utils.decorators import with_retry
 from job_bot.utils.file_tools import is_same_file_content
 
 
@@ -45,7 +48,7 @@ def _has_correct_value(field: FormField, expected_value: object) -> bool:
         )
 
     if expected_value is None:
-        return True
+        return False
 
     if field.interaction_strategy in {"select_radio", "toggle_checkbox"}:
         if isinstance(expected_value, bool):
@@ -238,6 +241,90 @@ class GreenHouseFiller(BaseApplier):
     async def pick_date(self, field: FormField, value: str) -> None:
         pass
 
+    @with_retry(attempts=3, delay_seconds=2, exceptions=(IncompleteApplicationError,))
+    async def playwright_apply(self, browser_session: BrowserSession) -> None:
+        page_inspection = await inspect_page(browser_session.page())
+
+        for field in page_inspection.form_fields:
+            try:
+                bind_contextvars(
+                    field_key=field.field_key,
+                    accessible_name=field.accessible_name,
+                    interaction_kind=field.interaction_strategy,
+                    input_type=field.input_type,
+                    field_required=field.required,
+                )
+
+                if field.field_key == "application-irrelevant" or field.field_key == "unknown":
+                    get_logger().info("Skipping not supported field")
+                    continue
+
+                answer = self.get_answer(field.field_key)
+                # check if already filled with correct answer
+                if _has_correct_value(field, answer):
+                    continue
+
+                filler = getattr(self, field.interaction_strategy, None)
+                if filler is None:
+                    raise ValueError("No filler found for interaction kind.")
+
+                await filler(field, answer)
+                get_logger().info("Field filled successfully", field_value=str(answer)[:5])
+            except Exception as e:
+                get_logger().error("Error filling field", error=str(e)[:100])
+            finally:
+                unbind_contextvars(
+                    "field_key",
+                    "accessible_name",
+                    "interaction_kind",
+                    "input_type",
+                    "field_required",
+                )
+
+        completed_inspection = await inspect_page(browser_session.page())
+        field_correctness = {
+            field.accessible_name: (
+                _has_correct_value(field, self.get_answer(field.field_key)),
+                self.get_answer(field.field_key),
+                field.current_value,
+            )
+            for field in completed_inspection.form_fields
+            if field.required is True
+        }
+        all_fields_filled = all(correctness for correctness, _, _ in field_correctness.values())
+
+        get_logger().debug(
+            "application state",
+            field_correctness=field_correctness,
+            all_fields_filled=all_fields_filled,
+        )
+        if not all_fields_filled:
+            not_filled_fields = [
+                accessible_name
+                for accessible_name, (correctness, _, _) in field_correctness.items()
+                if not correctness
+            ]
+            raise IncompleteApplicationError(f"Fields not filled: {not_filled_fields}")
+        else:
+            # Click the submit button if all required fields are filled
+            submit_button = next(
+                (
+                    field
+                    for field in completed_inspection.form_fields
+                    if field.field_key == "submit_button" and field.interaction_strategy == "click"
+                ),
+                None,
+            )
+            if submit_button is not None:
+                await submit_button.click()
+                get_logger().info("Submit button clicked successfully.")
+            raise IncompleteApplicationError(
+                "All required fields filled, but submission button not found."
+            )
+
+    async def llm_resolve_incomplete_application(self, browser_session: BrowserSession) -> None:
+        pass
+
     async def apply(self) -> None:
 
         async with self.browser_session as browser_session:
@@ -245,70 +332,11 @@ class GreenHouseFiller(BaseApplier):
 
             await page.goto(self.job_url, wait_until="domcontentloaded")
             await asyncio.sleep(3)
-            all_fields_filled = False
-            max_loop = 3
-            while not all_fields_filled and max_loop > 0:
-                max_loop -= 1
-                get_logger().info(
-                    "automated filling attempt",
-                    remaining_attempts=max_loop,
-                )
 
-                page_inspection = await inspect_page(browser_session.page())
-
-                for field in page_inspection.form_fields:
-                    try:
-                        bind_contextvars(
-                            field_key=field.field_key,
-                            accessible_name=field.accessible_name,
-                            interaction_kind=field.interaction_strategy,
-                            input_type=field.input_type,
-                            field_required=field.required,
-                        )
-
-                        if (
-                            field.field_key == "application-irrelevant"
-                            or field.field_key == "unknown"
-                        ):
-                            get_logger().info("Skipping not supported field")
-                            continue
-
-                        answer = self.get_answer(field.field_key)
-                        # check if already filled with correct answer
-                        if _has_correct_value(field, answer):
-                            continue
-
-                        filler = getattr(self, field.interaction_strategy, None)
-                        if filler is None:
-                            raise ValueError("No filler found for interaction kind.")
-
-                        await filler(field, answer)
-                        get_logger().info("Field filled successfully", field_value=str(answer)[:5])
-                    except Exception as e:
-                        get_logger().error("Error filling field", error=str(e)[:100])
-                    finally:
-                        unbind_contextvars(
-                            "field_key", "accessible_name", "interaction_kind", "input_type"
-                        )
-
-                completed_inspection = await inspect_page(browser_session.page())
-                field_correctness = {
-                    field.field_key: (
-                        _has_correct_value(field, self.get_answer(field.field_key)),
-                        self.get_answer(field.field_key),
-                        field.current_value,
-                    )
-                    for field in completed_inspection.form_fields
-                }
-                all_fields_filled = all(
-                    correctness for correctness, _, _ in field_correctness.values()
-                )
-
-                get_logger().debug(
-                    "Field correctness after filling attempt",
-                    field_correctness=field_correctness,
-                    all_fields_filled=all_fields_filled,
-                )
-                await asyncio.sleep(1)  # Wait for 1 second before re-inspecting the page
+            try:
+                await self.playwright_apply(browser_session)
+            except IncompleteApplicationError as e:
+                get_logger().warning("Incomplete application detected", error=str(e))
+                await self.llm_resolve_incomplete_application(browser_session)
 
             await asyncio.sleep(30)  # Wait for 3 seconds before final inspection
