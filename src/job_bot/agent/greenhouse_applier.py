@@ -1,5 +1,4 @@
 import asyncio
-import random
 import re
 from typing import Any
 
@@ -235,6 +234,12 @@ class GreenHouseFiller(BaseApplier):
             all_fields_filled = False
             max_loop = 3
             while not all_fields_filled and max_loop > 0:
+                max_loop -= 1
+                get_logger().info(
+                    "automated filling attempt",
+                    remaining_attempts=max_loop,
+                )
+
                 page_inspection = await inspect_active_page(browser_session.page())
 
                 for field in page_inspection.form_fields:
@@ -283,9 +288,10 @@ class GreenHouseFiller(BaseApplier):
                 get_logger().debug(
                     "Field correctness after filling attempt", field_correctness=field_correctness
                 )
-                all_fields_filled = all(field_correctness.values())
+                all_fields_filled = all(
+                    correctness for correctness, _, _ in field_correctness.values()
+                )
 
-                await browser_session.page().wait_for_timeout(
-                    random.randint(100, 1500)
-                )  # Wait for 1 second before re-inspecting the page
-                max_loop -= 1
+                await asyncio.sleep(1)  # Wait for 1 second before re-inspecting the page
+
+            await asyncio.sleep(30)  # Wait for 3 seconds before final inspection

@@ -1,4 +1,3 @@
-import asyncio
 import hashlib
 from typing import Annotated, Any
 
@@ -52,7 +51,6 @@ async def inspect(
     async with async_playwright() as playwright:
         filler = GreenHouseFiller(playwright, user, job_url, application_file_set)
         await filler.apply()
-        await asyncio.sleep(30)
     # pause the execution
 
 
