@@ -1,4 +1,3 @@
-import os
 from typing import Any, Optional
 
 from langchain.agents import create_agent
@@ -6,6 +5,8 @@ from langchain.messages import HumanMessage, SystemMessage
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+
+from job_bot.config import setting_value
 
 
 class PayRange(BaseModel):
@@ -51,7 +52,7 @@ Rules:
 
 
 def _require_env_var(name: str) -> str:
-    value = os.getenv(name)
+    value = setting_value(name)
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
@@ -96,7 +97,7 @@ def find_jobs(query: JobQuery) -> list[JobEntry]:
     _require_env_var("OPENAI_API_KEY")
     _require_env_var("TAVILY_API_KEY")
 
-    model_name = os.getenv("JOB_BOT_LLM_MODEL", "gpt-4o-mini")
+    model_name = setting_value("JOB_BOT_LLM_MODEL") or "gpt-4o-mini"
     llm = ChatOpenAI(model=model_name, temperature=0)
     search_tool = TavilySearchResults(max_results=8)
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import inspect
-import os
 from collections.abc import Callable
 from functools import cache
 from operator import add
@@ -23,6 +22,7 @@ from sqlalchemy.orm import Session
 from structlog import get_logger
 
 from job_bot.agent.greenhouse_applier import GreenHouseFiller
+from job_bot.config import settings
 from job_bot.db.job_models import Job, JobPageInspection
 from job_bot.openai_client import get_async_openai_client
 from job_bot.schemas import ApplicationFileSet, FormField, PageInspection, User
@@ -112,7 +112,7 @@ class _AgentContext(BaseModel):
 
 
 async def inspect_page(url: str, session: Session) -> list[PageInspection]:
-    model = os.getenv("JOB_BOT_LLM_MODEL")
+    model = settings().JOB_BOT_LLM_MODEL
     if not model:
         raise RuntimeError("Environment variable JOB_BOT_LLM_MODEL is not set.")
 

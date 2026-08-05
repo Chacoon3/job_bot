@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from time import perf_counter_ns
@@ -8,6 +7,8 @@ from time import perf_counter_ns
 import structlog
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
+
+from job_bot.config import setting_value, settings
 
 DATABASE_URL_ENV = "DATABASE_URL"
 DB_POOL_SIZE_ENV = "DB_POOL_SIZE"
@@ -49,7 +50,7 @@ class TimedSession(Session):
 
 
 def _integer_setting(name: str, default: int, minimum: int = 0) -> int:
-    raw_value = os.getenv(name)
+    raw_value = setting_value(name)
     if raw_value is None:
         return default
 
@@ -64,7 +65,7 @@ def _integer_setting(name: str, default: int, minimum: int = 0) -> int:
 
 
 def create_database_engine(database_url: str | None = None) -> Engine:
-    url = database_url or os.getenv(DATABASE_URL_ENV)
+    url = database_url or settings().DATABASE_URL
     if not url:
         raise RuntimeError(
             f"{DATABASE_URL_ENV} is required; expected a "

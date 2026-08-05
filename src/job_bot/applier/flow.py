@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime
 
 import structlog
@@ -9,6 +8,7 @@ from langchain.messages import HumanMessage
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
+from job_bot.config import settings
 from job_bot.llm import OpenAILLMProvider
 from job_bot.openai_client import get_openai_client
 from job_bot.schemas import ApplicationStatus, JobEntrySchema, User
@@ -109,7 +109,7 @@ For every returned job:
 
 
 def find_jobs(query: JobQuery) -> list[JobEntrySchema]:
-    model_name = os.getenv("JOB_BOT_LLM_MODEL", "gpt-5.4-nano")
+    model_name = settings().JOB_BOT_LLM_MODEL
     client = get_openai_client()
     prompt = _build_job_search_prompt(query)
     response = client.responses.parse(

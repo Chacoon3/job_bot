@@ -1,5 +1,4 @@
 import json
-import os
 import tempfile
 from functools import cache
 from pathlib import Path
@@ -7,6 +6,8 @@ from typing import Any, Generic, Iterable, Optional, TypeVar
 
 from google.cloud.storage import Client
 from pydantic import BaseModel
+
+from job_bot.config import settings
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -277,6 +278,8 @@ class GCSFlatFileDBClient:
 
 @cache
 def get_gcs_flat_file_db_client() -> GCSFlatFileDBClient:
+    cfg = settings()
     return GCSFlatFileDBClient(
-        bucket_name=os.getenv("GCP_BUCKET_NAME"), prefix=f"trade-3{os.getenv('ENV')}-flatdb"
+        bucket_name=cfg.GCP_BUCKET_NAME or "",
+        prefix=f"trade-3{cfg.ENV}-flatdb",
     )

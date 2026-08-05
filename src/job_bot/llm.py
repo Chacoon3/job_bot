@@ -1,4 +1,3 @@
-import os
 from abc import ABC, abstractmethod
 from typing import cast
 
@@ -12,9 +11,11 @@ from langchain_huggingface import (
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
+from job_bot.config import setting_value, settings
+
 
 def _resolve_secret(explicit: str | None, env_var: str) -> str:
-    value = explicit or os.getenv(env_var)
+    value = explicit or setting_value(env_var)
     if not value:
         raise RuntimeError(f"Missing credential. Set {env_var} or pass it explicitly.")
     return value
@@ -143,7 +144,7 @@ class OllamaLLMProvider(LLMProvider):
     ) -> None:
         self.model = model
         self.temperature = temperature
-        self.base_url = base_url or os.getenv("OLLAMA_BASE_URL")
+        self.base_url = base_url or settings().OLLAMA_BASE_URL
 
     def get_model(self) -> BaseChatModel:
         return cast(

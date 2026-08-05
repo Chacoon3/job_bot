@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
 
 import structlog
 from opentelemetry import trace
 from structlog.typing import EventDict, WrappedLogger
+
+from job_bot.config import setting_value, settings
 
 LOG_LEVEL_ENV = "LOG_LEVEL"
 APP_ENV_ENV = "APP_ENV"
@@ -41,11 +42,13 @@ def _order_log_keys(
 
 def configure_logging() -> None:
     """Configure structlog and route standard-library logs through its renderer."""
-    level_name = os.getenv(LOG_LEVEL_ENV, "INFO").upper()
+    cfg = settings()
+    level_name = cfg.LOG_LEVEL.upper()
     level = getattr(logging, level_name, logging.INFO)
+    app_env = (setting_value(APP_ENV_ENV) or "").strip().lower()
     renderer = (
         structlog.dev.ConsoleRenderer()
-        if os.getenv(APP_ENV_ENV, "").strip().lower() == LOCAL_APP_ENV
+        if app_env == LOCAL_APP_ENV
         else structlog.processors.JSONRenderer()
     )
     shared_processors = [

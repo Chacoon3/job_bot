@@ -1,7 +1,6 @@
 import hashlib
 import inspect
 import json
-import os
 import random
 import re
 from collections.abc import Callable
@@ -9,6 +8,7 @@ from typing import Any
 
 from playwright.async_api import Page, expect
 
+from job_bot.config import settings
 from job_bot.openai_client import get_async_openai_client
 from job_bot.schemas import DropdownOption, DropdownSnapshot, FormField, PageInspection
 from job_bot.utils.browser_tools import Locator
@@ -616,7 +616,7 @@ async def llm_infer_correct_dropdown_option(
     model = get_async_openai_client()
     dropdown_options = await extract_dropdown_options(page, locator)
     resp = await model.responses.create(
-        model=os.getenv("JOB_BOT_LLM_MODEL"),
+        model=settings().JOB_BOT_LLM_MODEL,
         input=[
             {
                 "role": "system",

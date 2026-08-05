@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
-
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from job_bot.config import settings
 from job_bot.logging import configure_logging
 
 DATABASE_URL_ENV = "DATABASE_URL"
@@ -19,7 +18,7 @@ target_metadata = None
 
 
 def database_url() -> str:
-    url = os.getenv(DATABASE_URL_ENV)
+    url = settings().DATABASE_URL
     if not url:
         raise RuntimeError(
             f"{DATABASE_URL_ENV} is required; expected a "

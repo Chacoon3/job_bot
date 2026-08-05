@@ -1,6 +1,7 @@
-import os
 from dataclasses import dataclass
 from functools import cache
+
+from job_bot.config import settings
 
 
 @dataclass(frozen=True)
@@ -14,13 +15,10 @@ class GCPConfig:
 @cache
 def get_gcp_config() -> GCPConfig:
     """Get GCP configuration from environment variables."""
+    cfg = settings()
     return GCPConfig(
-        GCP_PROJECT_ID=os.environ.get("GCP_PROJECT_ID", ""),
-        GCS_API_BASE_URL=os.environ.get(
-            "GCS_API_BASE_URL", "https://storage.googleapis.com/storage/v1"
-        ),
-        GCS_READ_ONLY_SCOPE=os.environ.get(
-            "GCS_READ_ONLY_SCOPE", "https://www.googleapis.com/auth/devstorage.read_only"
-        ),
-        GCP_BUCKET_NAME=os.environ.get("GCP_BUCKET_NAME", ""),
+        GCP_PROJECT_ID=cfg.GCP_PROJECT_ID or "",
+        GCS_API_BASE_URL=cfg.GCS_API_BASE_URL,
+        GCS_READ_ONLY_SCOPE=cfg.GCS_READ_ONLY_SCOPE,
+        GCP_BUCKET_NAME=cfg.GCP_BUCKET_NAME or "",
     )

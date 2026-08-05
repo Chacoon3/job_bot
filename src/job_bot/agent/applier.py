@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 from playwright.async_api import Playwright
 
+from job_bot.config import settings
 from job_bot.schemas import ApplicationFileSet, FormField, User
 from job_bot.utils.browser_tools import BrowserSession
 
@@ -15,7 +16,7 @@ class BaseApplier(ABC):
         file_set: ApplicationFileSet | None = None,
     ) -> None:
         self.playwright = playwright
-        self.browser_session = BrowserSession(playwright)
+        self.browser_session = BrowserSession(playwright, settings().APP_ENV != "local")
         self.job_url = job_url
         self.user = user
         self.file_set = file_set

@@ -205,7 +205,7 @@ class GreenHouseFiller(BaseApplier):
                     self.file_set.cover_letter,
                 )
 
-    async def click(self, field: FormField, value: str) -> None:
+    async def click(self, field: FormField) -> None:
         button_locator = locate_by_accessible_name(
             self.browser_session.page(),
             field.accessible_name,

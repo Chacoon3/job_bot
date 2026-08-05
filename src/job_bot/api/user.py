@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
-import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
@@ -13,6 +12,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
+from job_bot.config import settings
 from job_bot.db.user_models import User as ORMUser
 from job_bot.openai_client import get_async_openai_client
 from job_bot.schemas import (
@@ -132,7 +132,7 @@ def _user_cache_key(
         "resume_sha256": hashlib.sha256(resume_content).hexdigest(),
         "filename": Path(filename).name,
         "supplement": supplement.model_dump(mode="json"),
-        "model": os.getenv("JOB_BOT_LLM_MODEL"),
+        "model": settings().JOB_BOT_LLM_MODEL,
         "output_schema": model_schema_key(User),
         "supplement_schema": model_schema_key(UserSupplement),
         "instructions": USER_EXTRACTION_INSTRUCTIONS,
@@ -154,7 +154,7 @@ async def _extract_user(
     user_supplement: UserSupplement,
 ) -> User:
     """Extract and validate a complete user from a resume."""
-    model = os.getenv("JOB_BOT_LLM_MODEL")
+    model = settings().JOB_BOT_LLM_MODEL
     if not model:
         raise RuntimeError("Environment variable JOB_BOT_LLM_MODEL is not set.")
 

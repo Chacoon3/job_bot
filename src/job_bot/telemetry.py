@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import structlog
 from fastapi import FastAPI
 from opentelemetry import metrics, trace
@@ -15,6 +13,8 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+from job_bot.config import setting_value, settings
 
 OTEL_EXPORTER_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_ENDPOINT"
 OTEL_TRACES_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
@@ -36,20 +36,21 @@ def configure_telemetry(app: FastAPI) -> bool:
     if _configured or _sdk_disabled():
         return False
 
-    common_endpoint = os.getenv(OTEL_EXPORTER_ENDPOINT_ENV)
-    traces_enabled = bool(common_endpoint or os.getenv(OTEL_TRACES_ENDPOINT_ENV)) and not _is_none(
-        OTEL_TRACES_EXPORTER_ENV
-    )
-    metrics_endpoint = common_endpoint or os.getenv(OTEL_METRICS_ENDPOINT_ENV)
+    cfg = settings()
+    common_endpoint = cfg.OTEL_EXPORTER_OTLP_ENDPOINT
+    traces_enabled = bool(
+        common_endpoint or cfg.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+    ) and not _is_none(OTEL_TRACES_EXPORTER_ENV)
+    metrics_endpoint = common_endpoint or cfg.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
     metrics_enabled = bool(metrics_endpoint) and not _is_none(OTEL_METRICS_EXPORTER_ENV)
     if not traces_enabled and not metrics_enabled:
         return False
 
     resource = Resource.create(
         {
-            "service.name": os.getenv(OTEL_SERVICE_NAME_ENV, "job-bot"),
+            "service.name": cfg.OTEL_SERVICE_NAME,
             "service.version": "0.1.0",
-            "deployment.environment.name": os.getenv(APP_ENV_ENV, "local"),
+            "deployment.environment.name": cfg.APP_ENV,
         }
     )
 
@@ -70,14 +71,16 @@ def configure_telemetry(app: FastAPI) -> bool:
         "opentelemetry_configured",
         traces_enabled=traces_enabled,
         metrics_enabled=metrics_enabled,
-        service_name=os.getenv(OTEL_SERVICE_NAME_ENV, "job-bot"),
+        service_name=cfg.OTEL_SERVICE_NAME,
     )
     return True
 
 
 def _sdk_disabled() -> bool:
-    return os.getenv(OTEL_SDK_DISABLED_ENV, "").strip().lower() in {"true", "1", "yes"}
+    value = settings().OTEL_SDK_DISABLED or ""
+    return value.strip().lower() in {"true", "1", "yes"}
 
 
 def _is_none(environment_variable: str) -> bool:
-    return os.getenv(environment_variable, "otlp").strip().lower() == "none"
+    value = setting_value(environment_variable) or "otlp"
+    return value.strip().lower() == "none"

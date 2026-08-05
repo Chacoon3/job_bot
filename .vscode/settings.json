@@ -17,5 +17,6 @@
   "editor.formatOnSave": true,
   "pylint.enabled": true,
   "pylint.cwd": "${workspaceFolder}",
-  "isort.args": ["--profile", "black"]
+  "isort.args": ["--profile", "black"],
+  "chat.permissions.default": "autopilot"
 }
