@@ -11,8 +11,7 @@ from job_bot.agent.dropdown_regulator import get_dropdown_regulator_by_field_key
 from job_bot.agent.file_upload import upload_greenhouse_cover_letter, upload_greenhouse_resume
 from job_bot.agent.filler_tools import (
     fill_text_field,
-    inspect_active_page,
-    llm_infer_correct_dropdown_option,
+    inspect_page,
     locate_by_accessible_name,
     select_dropdown_option,
 )
@@ -145,15 +144,13 @@ class GreenHouseFiller(BaseApplier):
 
         query = value
         if field.field_key == "city":
-            option_to_select = await llm_infer_correct_dropdown_option(
-                self.browser_session.page(),
-                dropdown_locator,
-                value,
-            )
-            if option_to_select:
-                query = option_to_select
-            else:
-                raise ValueError(f"Could not find a suitable option for city: {value}")
+            await dropdown_locator.click()
+            await dropdown_locator.fill(self.user.city)
+            await self.browser_session.page().wait_for_timeout(
+                1000
+            )  # Wait for 1 second to allow the dropdown to open
+            await self.browser_session.page().keyboard.press("Tab")
+            return
         elif field.field_key == "communications_consent" or field.field_key == "privacy_consent":
             value: YesNoOption = "no"
             query = value
@@ -240,7 +237,7 @@ class GreenHouseFiller(BaseApplier):
                     remaining_attempts=max_loop,
                 )
 
-                page_inspection = await inspect_active_page(browser_session.page())
+                page_inspection = await inspect_page(browser_session.page())
 
                 for field in page_inspection.form_fields:
                     try:
@@ -276,7 +273,7 @@ class GreenHouseFiller(BaseApplier):
                             "field_key", "accessible_name", "interaction_kind", "input_type"
                         )
 
-                completed_inspection = await inspect_active_page(browser_session.page())
+                completed_inspection = await inspect_page(browser_session.page())
                 field_correctness = {
                     field.field_key: (
                         _has_correct_value(field, self.get_answer(field.field_key)),
@@ -285,13 +282,15 @@ class GreenHouseFiller(BaseApplier):
                     )
                     for field in completed_inspection.form_fields
                 }
-                get_logger().debug(
-                    "Field correctness after filling attempt", field_correctness=field_correctness
-                )
                 all_fields_filled = all(
                     correctness for correctness, _, _ in field_correctness.values()
                 )
 
+                get_logger().debug(
+                    "Field correctness after filling attempt",
+                    field_correctness=field_correctness,
+                    all_fields_filled=all_fields_filled,
+                )
                 await asyncio.sleep(1)  # Wait for 1 second before re-inspecting the page
 
             await asyncio.sleep(30)  # Wait for 3 seconds before final inspection

@@ -7,6 +7,7 @@ from job_bot.agent.filler_tools import (
     _dropdown_option_cache_key,
     _infer_field_key,
     fill_text_field,
+    llm_infer_correct_dropdown_option,
     select_dropdown_option,
 )
 from job_bot.schemas import DropdownSnapshot
@@ -63,6 +64,36 @@ def test_infer_field_key_recognizes_city_identifier_boundaries() -> None:
     assert _infer_field_key({"input_name": "job_application[location_city]"}) == "city"
 
 
+def test_infer_field_key_only_classifies_resume_file_input_as_attachment() -> None:
+    resume_group = "Resume/CV*"
+
+    assert (
+        _infer_field_key(
+            {
+                "accessible_name": "Attach",
+                "element_id": "resume",
+                "input_type": "file",
+                "tag": "input",
+                "group_label": resume_group,
+            }
+        )
+        == "attach_resume_button"
+    )
+
+    for button_name in ("Attach", "Dropbox", "Google Drive", "Enter manually"):
+        assert (
+            _infer_field_key(
+                {
+                    "accessible_name": button_name,
+                    "input_type": "button",
+                    "tag": "button",
+                    "group_label": resume_group,
+                }
+            )
+            == "unknown"
+        )
+
+
 def test_dropdown_option_cache_key_uses_bound_arguments() -> None:
     def infer(page, locator, expected_value):
         raise AssertionError("The cache key builder must not call the function")
@@ -91,6 +122,49 @@ def test_dropdown_option_cache_key_uses_bound_arguments() -> None:
 
     assert positional_key == keyword_key
     assert positional_key != different_value_key
+
+
+def test_llm_dropdown_inference_returns_generated_output(monkeypatch) -> None:
+    response = SimpleNamespace(
+        output_text="  New York, New York, United States  ",
+        text=object(),
+    )
+    client = SimpleNamespace(
+        responses=SimpleNamespace(create=AsyncMock(return_value=response)),
+    )
+    monkeypatch.setattr(
+        "job_bot.agent.filler_tools.get_async_openai_client",
+        Mock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "job_bot.agent.filler_tools.extract_dropdown_options",
+        AsyncMock(return_value=DropdownSnapshot(kind="autocomplete", options=[])),
+    )
+
+    infer_without_cache = llm_infer_correct_dropdown_option.__wrapped__
+    result = asyncio.run(infer_without_cache(Mock(), Mock(), "New York"))
+
+    assert result == "New York, New York, United States"
+
+
+def test_llm_dropdown_inference_converts_none_sentinel(monkeypatch) -> None:
+    response = SimpleNamespace(output_text="None")
+    client = SimpleNamespace(
+        responses=SimpleNamespace(create=AsyncMock(return_value=response)),
+    )
+    monkeypatch.setattr(
+        "job_bot.agent.filler_tools.get_async_openai_client",
+        Mock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "job_bot.agent.filler_tools.extract_dropdown_options",
+        AsyncMock(return_value=DropdownSnapshot(kind="autocomplete", options=[])),
+    )
+
+    infer_without_cache = llm_infer_correct_dropdown_option.__wrapped__
+    result = asyncio.run(infer_without_cache(Mock(), Mock(), "Unknown"))
+
+    assert result is None
 
 
 def test_select_dropdown_option_queries_an_empty_autocomplete(monkeypatch) -> None:

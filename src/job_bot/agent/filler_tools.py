@@ -392,9 +392,9 @@ def _infer_field_key(field: dict[str, Any]) -> str:
         return "phone_country"
     if input_type == "tel":
         return "phone"
-    if "resume" in group or "cv" in group:
+    if input_type == "file" and ("resume" in group or "cv" in group):
         return "attach_resume_button"
-    if "cover letter" in group:
+    if input_type == "file" and "cover letter" in group:
         return "attach_cover_letter_button"
     if input_type == "submit" or (tag == "button" and "submit application" in name):
         return "submit_button"
@@ -430,7 +430,7 @@ def _infer_field_key(field: dict[str, Any]) -> str:
     return "unknown"
 
 
-async def inspect_active_page(page: Page) -> PageInspection:
+async def inspect_page(page: Page) -> PageInspection:
     """Inspect interactive controls in the active Playwright page.
 
     The browser computes DOM- and accessibility-derived facts in one pass.  No
@@ -640,4 +640,8 @@ async def llm_infer_correct_dropdown_option(
         ],
     )
 
-    return resp.text
+    inferred_option = resp.output_text.strip()
+    if not inferred_option or inferred_option.casefold() == "none":
+        return None
+
+    return inferred_option
