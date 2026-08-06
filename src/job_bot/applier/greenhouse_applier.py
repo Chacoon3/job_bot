@@ -7,11 +7,11 @@ from structlog import get_logger
 from structlog.contextvars import bind_contextvars, unbind_contextvars
 
 from job_bot.agent.applier import BaseApplier
-from job_bot.agent.applier_agent import (
-    agent_infer_interactive_element_answer,
-)
 from job_bot.agent.dropdown_regulator import get_dropdown_regulator_by_field_key
 from job_bot.agent.file_upload import upload_greenhouse_cover_letter, upload_greenhouse_resume
+from job_bot.agent.fill_form_agent import (
+    agent_infer_interactive_element_answer,
+)
 from job_bot.agent.filler_tools import (
     build_greenhouse_tools,
     fill_text_field,

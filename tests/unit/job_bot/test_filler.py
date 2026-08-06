@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from job_bot.agent.greenhouse_applier import GreenHouseFiller
+from job_bot.applier.greenhouse_applier import GreenHouseFiller
 from job_bot.schemas import FormField
 
 

@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from playwright.async_api import async_playwright
 from sqlalchemy.orm import Session
 
-from job_bot.agent.greenhouse_applier import GreenHouseFiller
 from job_bot.api.dependencies import get_session
+from job_bot.applier.greenhouse_applier import GreenHouseFiller
 from job_bot.schemas import ApplicationFileSet
 from job_bot.users import canonical_email, get_user, user_from_record
 from job_bot.utils.file_tools import extract_uploadable_file

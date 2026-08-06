@@ -1,3 +1,4 @@
+import importlib
 import os
 import sys
 from types import ModuleType
@@ -13,3 +14,9 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
 telemetry = ModuleType("job_bot.telemetry")
 telemetry.configure_telemetry = Mock(return_value=False)  # type: ignore[attr-defined]
 sys.modules["job_bot.telemetry"] = telemetry
+
+# Legacy module alias retained for tests while imports are migrated.
+sys.modules.setdefault(
+    "job_bot.agent.applier_agent",
+    importlib.import_module("job_bot.agent.fill_form_agent"),
+)

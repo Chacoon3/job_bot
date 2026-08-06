@@ -14,7 +14,7 @@ from job_bot.agent.nodes import (
     should_invoke_tool,
     tool_call_node,
 )
-from job_bot.agent.react_applier import (
+from job_bot.agent.react_job_agent import (
     MAX_MODEL_ACTIONS,
     ApplicationEvaluation,
     ApplicationStatus,

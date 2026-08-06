@@ -4,7 +4,8 @@ from langchain.messages import AIMessage, AnyMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import tool
 
-from job_bot.agent.applier_agent import _get_applier_agent, _Runtime, _State
+from job_bot.agent.fill_form_agent import _get_answer_agent as _get_applier_agent
+from job_bot.agent.fill_form_agent import _Runtime, _State
 
 
 def test_applier_agent_receives_model_through_runtime_context() -> None:

@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from structlog import get_logger
 
-from job_bot.agent.greenhouse_applier import GreenHouseFiller
+from job_bot.applier.greenhouse_applier import GreenHouseFiller
 from job_bot.config import settings
 from job_bot.db.job_models import Job, JobPageInspection
 from job_bot.openai_client import get_async_openai_client

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from job_bot.agent.mixed_applier import (
+from job_bot.agent.mixed_job_agent import (
     FormField,
     PageInspection,
     _load_page_inspections,

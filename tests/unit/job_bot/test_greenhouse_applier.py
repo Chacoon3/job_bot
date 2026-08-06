@@ -1,4 +1,4 @@
-from job_bot.agent.greenhouse_applier import _has_correct_value
+from job_bot.applier.greenhouse_applier import _has_correct_value
 from job_bot.schemas import FormField, FormOption, InspectedFile, UploadableFile
 
 

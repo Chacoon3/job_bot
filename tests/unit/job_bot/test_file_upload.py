@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 from starlette.datastructures import FormData, Headers, UploadFile
 
-from job_bot.utils.file_upload import extract_uploadable_file, parse_pure_text_pdf
+from job_bot.utils.file_tools import extract_uploadable_file, parse_pure_text_pdf
 
 
 class FakeRequest:
