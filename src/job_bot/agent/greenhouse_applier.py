@@ -7,18 +7,23 @@ from structlog import get_logger
 from structlog.contextvars import bind_contextvars, unbind_contextvars
 
 from job_bot.agent.applier import BaseApplier
+from job_bot.agent.applier_agent import (
+    agent_fill_interactive_element,
+    agent_infer_interactive_element_answer,
+)
 from job_bot.agent.dropdown_regulator import get_dropdown_regulator_by_field_key
 from job_bot.agent.file_upload import upload_greenhouse_cover_letter, upload_greenhouse_resume
 from job_bot.agent.filler_tools import (
+    build_greenhouse_tools,
     fill_text_field,
     inspect_page,
     locate_by_accessible_name,
     select_dropdown_option,
 )
 from job_bot.exceptions import IncompleteApplicationError
+from job_bot.llm import OpenAILLMProvider
 from job_bot.schemas import FormField, JobFormFieldKey, UploadableFile, YesNoOption
 from job_bot.utils.browser_tools import BrowserSession
-from job_bot.utils.decorators import with_retry
 from job_bot.utils.file_tools import is_same_file_content
 
 
@@ -241,7 +246,6 @@ class GreenHouseFiller(BaseApplier):
     async def pick_date(self, field: FormField, value: str) -> None:
         pass
 
-    @with_retry(attempts=3, delay_seconds=2, exceptions=(IncompleteApplicationError,))
     async def playwright_apply(self, browser_session: BrowserSession) -> None:
         page_inspection = await inspect_page(browser_session.page())
 
@@ -305,26 +309,80 @@ class GreenHouseFiller(BaseApplier):
                 if not correctness
             ]
             raise IncompleteApplicationError(f"Fields not filled: {not_filled_fields}")
-        else:
-            # Click the submit button if all required fields are filled
-            submit_button = next(
-                (
-                    field
-                    for field in completed_inspection.form_fields
-                    if field.field_key == "submit_button" and field.interaction_strategy == "click"
-                ),
-                None,
-            )
-            if submit_button is not None:
-                await self.click(submit_button)
-                await asyncio.sleep(3)  # Wait for 3 seconds to allow the submission to
-                get_logger().info("Submit button clicked successfully.")
-            raise IncompleteApplicationError(
-                "All required fields filled, but submission button not found."
-            )
 
     async def llm_resolve_incomplete_application(self, browser_session: BrowserSession) -> None:
-        pass
+        get_logger().info("Attempting to resolve incomplete application using LLM.")
+        tools = build_greenhouse_tools(browser_session)
+        page_inspection = await inspect_page(browser_session.page())
+        fields_to_fill = [
+            field
+            for field in page_inspection.form_fields
+            if not _has_correct_value(field, self.get_answer(field.field_key))
+            and field.required is True
+        ]
+
+        inferred_answers = await agent_fill_interactive_element(
+            OpenAILLMProvider().get_model(), tools, fields_to_fill, self.user
+        )
+        get_logger().info(
+            "LLM field filling completed.",
+            requested_field_count=len(fields_to_fill),
+            inferred_answer_count=len(inferred_answers.answers),
+        )
+
+    async def llm_assist_incomplete_application(self, browser_session: BrowserSession) -> None:
+        get_logger().info("Attempting to resolve incomplete application using LLM (assisted).")
+        tools = build_greenhouse_tools(browser_session, "read")
+        page_inspection = await inspect_page(browser_session.page())
+        fields_to_fill = [
+            field
+            for field in page_inspection.form_fields
+            if not _has_correct_value(field, self.get_answer(field.field_key))
+            and field.required is True
+        ]
+
+        inferred_answers = await agent_infer_interactive_element_answer(
+            OpenAILLMProvider().get_model(), tools, fields_to_fill, self.user
+        )
+        answers_by_field_key = {
+            suggestion.field_key: suggestion.value for suggestion in inferred_answers.answers
+        }
+
+        for field in fields_to_fill:
+            try:
+                bind_contextvars(
+                    field_key=field.field_key,
+                    accessible_name=field.accessible_name,
+                    interaction_kind=field.interaction_strategy,
+                    input_type=field.input_type,
+                    field_required=field.required,
+                )
+
+                if field.field_key not in answers_by_field_key:
+                    get_logger().warning("No inferred answer returned for field.")
+                    continue
+
+                answer = answers_by_field_key[field.field_key]
+                if answer is None:
+                    get_logger().warning("Inferred answer is empty; skipping field.")
+                    continue
+
+                filler = getattr(self, field.interaction_strategy, None)
+                if filler is None:
+                    raise ValueError("No filler found for interaction kind.")
+
+                await filler(field, answer)
+                get_logger().info("Field filled successfully", field_value=str(answer)[:5])
+            except Exception as e:
+                get_logger().error("Error filling field", error=str(e)[:100])
+            finally:
+                unbind_contextvars(
+                    "field_key",
+                    "accessible_name",
+                    "interaction_kind",
+                    "input_type",
+                    "field_required",
+                )
 
     async def apply(self) -> None:
 
@@ -338,6 +396,6 @@ class GreenHouseFiller(BaseApplier):
                 await self.playwright_apply(browser_session)
             except IncompleteApplicationError as e:
                 get_logger().warning("Incomplete application detected", error=str(e))
-                await self.llm_resolve_incomplete_application(browser_session)
+                await self.llm_assist_incomplete_application(browser_session)
 
             await asyncio.sleep(30)  # Wait for 3 seconds before final inspection

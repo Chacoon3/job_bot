@@ -5,14 +5,15 @@ import json
 import random
 import re
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
+from langchain_community.tools import BaseTool, tool
 from playwright.async_api import Page, expect
 
 from job_bot.config import settings
 from job_bot.openai_client import get_async_openai_client
 from job_bot.schemas import DropdownOption, DropdownSnapshot, FormField, PageInspection
-from job_bot.utils.browser_tools import Locator
+from job_bot.utils.browser_tools import BrowserSession, Locator
 from job_bot.utils.caching import AppRedisCache
 
 
@@ -674,3 +675,50 @@ async def llm_infer_correct_dropdown_option(
         return None
 
     return inferred_option
+
+
+def build_greenhouse_tools(
+    browser_session: BrowserSession, mode: Literal["read", "write", "read_write"] = "read_write"
+) -> list[BaseTool]:
+    """Build a set of LangChain tools for filling a Greenhouse application.
+
+    Args:
+        browser_session: The active Playwright browser session used to fill
+            the application. The tools will use this session to interact with
+            the page.
+    Returns:
+        A list of LangChain tools that can be used to fill the application.
+    """
+
+    @tool(
+        name_or_callable="inspect_page",
+        description=(
+            "Inspect the current page and return a JSON representation of all "
+            "interactive form fields, including their accessible names, types, "
+            "This tool does not modify the page."
+        ),
+    )
+    async def inspect_page_tool() -> PageInspection:
+        return await inspect_page(browser_session.page())
+
+    @tool(
+        name_or_callable="fill_text_field",
+        description=(
+            "Fill a text field identified by its accessible name with the given value. "
+            "The accessible name is the label or aria-label of the field. "
+            "This tool will locate the field, fill it with the value, and verify that "
+            "the value was retained. If the field is not found or not editable, it will raise an error."
+        ),
+    )
+    async def fill_text_field_tool(
+        accessible_name: str,
+        value: str,
+    ) -> None:
+        locator = locate_by_accessible_name(browser_session.page(), accessible_name)
+        await fill_text_field(locator, value)
+
+    if mode == "read":
+        return [inspect_page_tool]
+    if mode == "write":
+        return [fill_text_field_tool]
+    return [inspect_page_tool, fill_text_field_tool]

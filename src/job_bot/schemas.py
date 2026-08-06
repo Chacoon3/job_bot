@@ -402,3 +402,12 @@ class ApplicationFileSet(BaseModel):
 
 class PageInspection(BaseModel):
     form_fields: list[FormField] = Field(default_factory=list)
+
+
+class FormSuggestion(BaseModel):
+    field_key: JobFormFieldKey
+    value: str | bool | None = None
+
+
+class InferredFormAnswers(BaseModel):
+    answers: list[FormSuggestion] = Field(default_factory=list)

@@ -1,18 +1,22 @@
+from __future__ import annotations
+
 from functools import cache
 from operator import add
 from typing import Annotated
 
 from langchain.chat_models import BaseChatModel
-from langchain.messages import AnyMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_community.tools import BaseTool
+from langchain_core.language_models.base import LanguageModelInput
+from langchain_core.runnables import Runnable
 from langgraph.graph import END, START, StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import BaseModel, ConfigDict
+from langgraph.runtime import Runtime
+from pydantic import BaseModel, ConfigDict, Field
 from structlog import get_logger
 
 from job_bot.config import settings
 from job_bot.schemas import FormField, User
-from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 
 
 class _State(BaseModel):
@@ -25,6 +29,7 @@ class _State(BaseModel):
     tool_call_count: Annotated[int, add] = 0
     failure_count: Annotated[int, add] = 0
     retry_count: Annotated[int, add] = 0
+    answers: Annotated[list[_FormAnswer], add] = []
 
 
 class _Runtime(BaseModel):
@@ -34,12 +39,12 @@ class _Runtime(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    browser_session: BrowserSession
     model: BaseChatModel
-    tool_registry: dict[str, BaseTool] = {}
+    model_with_browser_tools: Runnable[LanguageModelInput, AIMessage]
+    tool_registry: dict[str, BaseTool] = Field(default_factory=dict)
 
 
-async def _act(state: _State, runtime: _Runtime) -> _State:
+async def _act(state: _State, runtime: Runtime[_Runtime]) -> _State:
     """
     Performs an action in the application process.
 
@@ -54,13 +59,13 @@ async def _act(state: _State, runtime: _Runtime) -> _State:
     # Here you would implement the logic to perform an action based on the current state and runtime.
     # This could involve interacting with the browser session, sending messages to the model, etc.
 
-    resp = await runtime.model.ainvoke(state.messages)
-    return _State(messages=[resp], call_count=1)
+    resp = await runtime.context.model_with_browser_tools.ainvoke(state.messages)
+    return _State(messages=[resp], call_count=1, answers=state.answers)
 
 
 async def _use_tool(
     state: _State,
-    runtime: _Runtime,
+    runtime: Runtime[_Runtime],
 ) -> _State:
     last_message = state.messages[-1]
 
@@ -71,7 +76,7 @@ async def _use_tool(
     failed_calls = 0
 
     for tool_call in last_message.tool_calls:
-        tool: BaseTool = runtime.tool_registry.get(tool_call["name"])
+        tool: BaseTool | None = runtime.context.tool_registry.get(tool_call["name"])
         if tool is None:
             result = f"Tool not found: {tool_call['name']}"
             failed_calls += 1
@@ -90,8 +95,11 @@ async def _use_tool(
                 )
             except Exception as exc:
                 failed_calls += 1
-                result = f"Tool execution failed: {type(exc).__name__}: {exc}"
-                get_logger().error(
+                result = (
+                    f"Tool '{tool_call['name']}' failed. "
+                    "Inspect the field again or choose another supported interaction."
+                )
+                get_logger().exception(
                     "Tool execution failed.",
                     tool_name=tool_call["name"],
                     tool_args=tool_call["args"],
@@ -113,6 +121,27 @@ async def _use_tool(
         tool_call_count=len(tool_messages),
         failure_count=failed_calls,
     )
+
+
+async def _evaluate(state: _State, runtime: Runtime[_Runtime]) -> _State:
+    """
+    translates the model output to structured data for the form fields.
+
+    Args:
+        state (_State): The current state of the application process.
+        runtime (_Runtime): The runtime information of the application process.
+
+    Returns:
+        _State: The updated state of the application process.
+    """
+    if not state.messages:
+        raise RuntimeError("Agent state contains no messages.")
+    structured = runtime.context.model.with_structured_output(_AgentInferredFormAnswer)
+    msg = await structured.ainvoke(
+        state.messages
+        + [HumanMessage(content="Provide the inferred answers for the form fields in JSON format.")]
+    )
+    return _State(call_count=0, answers=msg)
 
 
 def post_act_router(state: _State) -> str:
@@ -138,89 +167,93 @@ def post_act_router(state: _State) -> str:
     if last_message.type == "ai" and last_message.tool_calls:
         return "use_tool"
 
-    return END
-
-
-def post_tool_router(state: _State) -> str:
-    if not state.messages:
-        raise RuntimeError("Agent state contains no messages.")
-
-    if state.failure_count >= settings().AGENT_MAX_FAILURES:
-        get_logger().warning(
-            "Too many failures. Ending the application process.",
-            failure_count=state.failure_count,
-        )
-        return END
-
-    if state.tool_call_count >= settings().AGENT_MAX_ACTIONS:
-        get_logger().warning(
-            "Too many tool actions. Ending the application process.",
-            action_count=state.tool_call_count,
-        )
-        return END
-
-    last_message = state.messages[-1]
-
-    if last_message.type == "ai" and last_message.tool_calls:
-        return "use_tool"
-
-    return END
+    return "evaluate"
 
 
 @cache
-def build_applier_agent() -> CompiledStateGraph[_State, _Runtime]:
+def _get_answer_agent() -> CompiledStateGraph[_State, _Runtime]:
     """
-    Builds the applier agent with the given model and browser session.
-
-    Args:
-        model (BaseChatModel): The chat model to use for the agent.
-        browser_session (BrowserSession): The browser session to use for the agent.
+    Builds and returns the compiled answer agent.
 
     Returns:
-        tuple[_State, _Runtime]: The initial state and runtime of the applier agent.
+        CompiledStateGraph[_State, _Runtime]: The compiled answer agent.
     """
-    graph = StateGraph(_State, _Runtime)
+    graph = StateGraph(_State, context_schema=_Runtime)
     graph.add_node("act", _act)
     graph.add_node("use_tool", _use_tool)
+    graph.add_node("evaluate", _evaluate)
+
     graph.add_edge(START, "act")
     graph.add_conditional_edges("act", post_act_router)
     graph.add_edge("use_tool", "act")
+    graph.add_edge("evaluate", END)
 
     agent = graph.compile()
     return agent
 
 
-async def agent_fill_interactive_element(
-    model: BaseChatModel, browser_session: BrowserSession, field: FormField, user: User
-) -> _State:
+class _FormAnswer(BaseModel):
     """
-    Ask the agent to fill an interactive form element on a web page.
+    A Pydantic model that holds the inferred answer for a form field.
+    """
+
+    field_accessible_name: str = Field(..., description="The name of the form field.")
+    answer: str = Field(..., description="The inferred answer for the form field.")
+
+
+class _AgentInferredFormAnswer(BaseModel):
+    """
+    A Pydantic model that holds the inferred answer for a form field.
+    """
+
+    answers: list[_FormAnswer] = Field(..., description="The inferred answers for the form fields.")
+
+
+async def agent_infer_interactive_element_answer(
+    model: BaseChatModel, tools: list[BaseTool], fields: list[FormField], user: User
+) -> str:
+    """
+    Ask the agent to infer the answer for an interactive form element on a web page.
 
     Args:
         model (BaseChatModel): The chat model to use for the agent.
-        browser_session (BrowserSession): The browser session to use for the agent.
+        tools (list[BaseTool]): The list of tools to use for the agent.
+        fields (list[FormField]): The form fields to infer the answer for.
+        user (User): The user information.
 
     Returns:
-        _Runtime: The runtime for the agent.
+        str: The inferred answer for the form fields.
     """
-
-    tools = build_browser_tools(browser_session)
-    model_with_tools = model.bind_tools(tools)
     tool_registry = {tool.name: tool for tool in tools}
+    model_with_browser_tools = model.bind_tools(tools)
     runtime = _Runtime(
-        browser_session=browser_session, model=model_with_tools, tool_registry=tool_registry
+        model_with_browser_tools=model_with_browser_tools, model=model, tool_registry=tool_registry
     )
 
     state = _State(
         messages=[
             SystemMessage(
-                content="You are a careful browser automation agent. Use only supplied candidate data, never invent answers, and report missing required information."
+                content=(
+                    "You are a browser automation assistant. Use only supplied "
+                    "candidate data and never invent answers. Your task is to infer the "
+                    "correct answer for a list of form fields based on the user's information and "
+                    "the accessible names of the form fields. "
+                    "Call inspect_page to understand the context of the fields. "
+                    "After receiving the inspection result, return the answer as plain text and stop. "
+                    "Do not take any action on the web page or fill in the form field yourself. "
+                    "The user's information is in JSON format as follows:\n"
+                    f"{user.model_dump_json()}"
+                )
             ),
             HumanMessage(
-                content=f"Fill the form field: {field.model_dump_json(indent=2)} with the following user data: {user.model_dump_json(indent=2)}"
+                content=(
+                    "Based on the information about me, come up with the correct answer "
+                    "for the following form fields denoted by their accessible names "
+                    f"'{', '.join(field.accessible_name for field in fields)}'. Return the answer as plain text and nothing else."
+                )
             ),
         ]
     )
 
-    resp = await build_applier_agent().ainvoke(state, runtime=runtime)
-    return resp
+    resp = await _get_answer_agent().ainvoke(state, context=runtime)
+    return resp["messages"][-1].content
