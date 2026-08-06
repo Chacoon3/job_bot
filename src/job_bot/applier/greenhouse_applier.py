@@ -146,11 +146,7 @@ class GreenHouseFiller(BaseApplier):
             field.role,
         )
 
-        get_logger().info(
-            "Filling native dropdown field",
-            field_name=field.accessible_name,
-            field_value=value,
-        )
+        get_logger().info("Filling native dropdown field", field_name=field.accessible_name)
 
         await select_dropdown_option(
             self.browser_session.page(),

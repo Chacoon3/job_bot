@@ -133,7 +133,6 @@ async def use_tool(
             get_logger().error(
                 "Unsupported tool requested.",
                 tool_name=tool_call["name"],
-                tool_args=tool_call["args"],
             )
         else:
             try:
@@ -141,7 +140,6 @@ async def use_tool(
                 get_logger().info(
                     "Tool executed successfully.",
                     tool_name=tool_call["name"],
-                    tool_args=tool_call["args"],
                 )
             except Exception as exc:
                 failed_calls += 1
@@ -149,7 +147,6 @@ async def use_tool(
                 get_logger().error(
                     "Tool execution failed.",
                     tool_name=tool_call["name"],
-                    tool_args=tool_call["args"],
                     error_type=type(exc).__name__,
                     error_message=str(exc),
                 )

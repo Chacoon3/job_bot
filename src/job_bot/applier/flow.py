@@ -197,7 +197,6 @@ async def apply_jobs(query: JobQuery, candidate: User) -> list[ApplicationStatus
     for job in jobs:
         try:
             resp = await apply_job(job.url, candidate)
-            logger.info("job_application_agent_completed", response=resp)
         except Exception as exc:
             status.append(
                 ApplicationStatus(
