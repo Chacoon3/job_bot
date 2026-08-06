@@ -8,7 +8,6 @@ from structlog.contextvars import bind_contextvars, unbind_contextvars
 
 from job_bot.agent.applier import BaseApplier
 from job_bot.agent.applier_agent import (
-    agent_fill_interactive_element,
     agent_infer_interactive_element_answer,
 )
 from job_bot.agent.dropdown_regulator import get_dropdown_regulator_by_field_key
@@ -310,26 +309,6 @@ class GreenHouseFiller(BaseApplier):
             ]
             raise IncompleteApplicationError(f"Fields not filled: {not_filled_fields}")
 
-    async def llm_resolve_incomplete_application(self, browser_session: BrowserSession) -> None:
-        get_logger().info("Attempting to resolve incomplete application using LLM.")
-        tools = build_greenhouse_tools(browser_session)
-        page_inspection = await inspect_page(browser_session.page())
-        fields_to_fill = [
-            field
-            for field in page_inspection.form_fields
-            if not _has_correct_value(field, self.get_answer(field.field_key))
-            and field.required is True
-        ]
-
-        inferred_answers = await agent_fill_interactive_element(
-            OpenAILLMProvider().get_model(), tools, fields_to_fill, self.user
-        )
-        get_logger().info(
-            "LLM field filling completed.",
-            requested_field_count=len(fields_to_fill),
-            inferred_answer_count=len(inferred_answers.answers),
-        )
-
     async def llm_assist_incomplete_application(self, browser_session: BrowserSession) -> None:
         get_logger().info("Attempting to resolve incomplete application using LLM (assisted).")
         tools = build_greenhouse_tools(browser_session, "read")
@@ -339,6 +318,7 @@ class GreenHouseFiller(BaseApplier):
             for field in page_inspection.form_fields
             if not _has_correct_value(field, self.get_answer(field.field_key))
             and field.required is True
+            and field.accessible_name is not None
         ]
 
         inferred_answers = await agent_infer_interactive_element_answer(
