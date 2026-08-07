@@ -3,8 +3,8 @@ from __future__ import annotations
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from job_bot.app_logging import configure_logging
 from job_bot.config import settings
-from job_bot.logging import configure_logging
 
 DATABASE_URL_ENV = "DATABASE_URL"
 

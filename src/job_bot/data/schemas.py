@@ -14,13 +14,9 @@ from job_bot.db.job_models import Job
 # Profile fields must be available to the application-filling LLM, but should
 # not be emitted verbatim in operational logs.  More sensitive profile details
 # (address, demographics, and document content) are redacted from logs.
-_CONTACT_DATA = Sensitive(
-    storage=StoragePolicy.ENCRYPT,
+_PLAIN = Sensitive(
+    storage=StoragePolicy.PLAIN,
     logging=ExposurePolicy.MASK,
-    llm=ExposurePolicy.PLAIN,
-)
-_PRIVATE_PROFILE_DATA = Sensitive(
-    storage=StoragePolicy.ENCRYPT,
     llm=ExposurePolicy.PLAIN,
 )
 _PRIVATE_DOCUMENT_DATA = Sensitive(storage=StoragePolicy.ENCRYPT)
@@ -122,12 +118,12 @@ class ApplicationStatus(BaseModel):
 
 
 class EducationDegree(BaseModel):
-    degree: Annotated[str, _PRIVATE_PROFILE_DATA]
-    field_of_study: Annotated[str, _PRIVATE_PROFILE_DATA]
-    institution: Annotated[str, _PRIVATE_PROFILE_DATA]
-    duration_minimum: Annotated[int, _PRIVATE_PROFILE_DATA]
-    duration_maximum: Annotated[int, _PRIVATE_PROFILE_DATA]
-    gpa: Annotated[float, _PRIVATE_PROFILE_DATA]
+    degree: Annotated[str, _PLAIN]
+    field_of_study: Annotated[str, _PLAIN]
+    institution: Annotated[str, _PLAIN]
+    duration_minimum: Annotated[int, _PLAIN]
+    duration_maximum: Annotated[int, _PLAIN]
+    gpa: Annotated[float, _PLAIN]
 
 
 JobFormFieldKey = Literal[
@@ -202,22 +198,22 @@ RaceEthnicityOption = Literal[
 class User(BaseModel):
     """All application and identity information owned by a user."""
 
-    first_name: Annotated[str, _CONTACT_DATA]
-    last_name: Annotated[str, _CONTACT_DATA]
-    email: Annotated[EmailStr, _CONTACT_DATA]
-    phone_country: Annotated[str, _CONTACT_DATA] = Field(min_length=1, max_length=255)
-    phone: Annotated[str, _CONTACT_DATA]
-    address_line_1: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
-    address_line_2: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
-    city: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
-    state: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
-    postal_code: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
-    country: Annotated[str | None, _PRIVATE_PROFILE_DATA] = Field(default=None, max_length=255)
+    first_name: Annotated[str, _PLAIN]
+    last_name: Annotated[str, _PLAIN]
+    email: Annotated[EmailStr, _PLAIN]
+    phone_country: Annotated[str, _PLAIN] = Field(min_length=1, max_length=255)
+    phone: Annotated[str, _PLAIN]
+    address_line_1: Annotated[str | None, _PLAIN] = None
+    address_line_2: Annotated[str | None, _PLAIN] = None
+    city: Annotated[str | None, _PLAIN] = None
+    state: Annotated[str | None, _PLAIN] = None
+    postal_code: Annotated[str | None, _PLAIN] = None
+    country: Annotated[str | None, _PLAIN] = Field(default=None, max_length=255)
 
-    linkedin_url: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
-    github_url: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
-    portfolio_url: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
-    website_url: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
+    linkedin_url: Annotated[str | None, _PLAIN] = None
+    github_url: Annotated[str | None, _PLAIN] = None
+    portfolio_url: Annotated[str | None, _PLAIN] = None
+    website_url: Annotated[str | None, _PLAIN] = None
 
     @field_validator("email", mode="after")
     @classmethod
@@ -245,20 +241,20 @@ class User(BaseModel):
             raise ValueError("country must identify a country")
         return canonical
 
-    authorized_to_work: Annotated[YesNoOption, _PRIVATE_PROFILE_DATA] = "yes"
-    requires_sponsorship: Annotated[YesNoOption, _PRIVATE_PROFILE_DATA] = "yes"
-    visa_status: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
+    authorized_to_work: Annotated[YesNoOption, _PLAIN] = "yes"
+    requires_sponsorship: Annotated[YesNoOption, _PLAIN] = "yes"
+    visa_status: Annotated[str | None, _PLAIN] = None
 
-    willing_to_relocate: Annotated[YesNoOption, _PRIVATE_PROFILE_DATA] = "yes"
-    gender: Annotated[GenderOption | None, _PRIVATE_PROFILE_DATA] = None
-    is_hispanic_or_latino: Annotated[YesNoOption, _PRIVATE_PROFILE_DATA] = "no"
-    race: Annotated[RaceEthnicityOption, _PRIVATE_PROFILE_DATA] = "asian"
-    disability_status: Annotated[DisabilityStatusOption, _PRIVATE_PROFILE_DATA] = "no"
-    veteran_status: Annotated[VeteranStatusOption, _PRIVATE_PROFILE_DATA] = "no"
+    willing_to_relocate: Annotated[YesNoOption, _PLAIN] = "yes"
+    gender: Annotated[GenderOption | None, _PLAIN] = None
+    is_hispanic_or_latino: Annotated[YesNoOption, _PLAIN] = "no"
+    race: Annotated[RaceEthnicityOption, _PLAIN] = "asian"
+    disability_status: Annotated[DisabilityStatusOption, _PLAIN] = "no"
+    veteran_status: Annotated[VeteranStatusOption, _PLAIN] = "no"
 
-    education: Annotated[list[EducationDegree], _PRIVATE_PROFILE_DATA]
-    resume_text: Annotated[str, _PRIVATE_DOCUMENT_DATA]
-    summary: Annotated[str, _PRIVATE_PROFILE_DATA]
+    education: Annotated[list[EducationDegree], _PLAIN]
+    resume_text: Annotated[str, _PLAIN]
+    summary: Annotated[str, _PLAIN]
 
     def to_prompt_text(self) -> str:
         """Convert the user to prompt text for LLMs."""
