@@ -16,7 +16,7 @@ from job_bot.agent.dropdown_regulator import (
     regulate_country,
     regulate_phone_country_code,
 )
-from job_bot.schemas import (
+from job_bot.data.schemas import (
     DisabilityOption,
     DisabilityStatusOption,
     GenderOption,

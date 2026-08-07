@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from playwright.async_api import Playwright
 
 from job_bot.config import settings
-from job_bot.schemas import ApplicationFileSet, FormField, User
+from job_bot.data.schemas import ApplicationFileSet, FormField, User
 from job_bot.utils.browser_tools import BrowserSession
 
 

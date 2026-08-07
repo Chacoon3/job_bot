@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock
 
 from job_bot.applier.greenhouse_applier import _has_correct_value, _is_submission_response
-from job_bot.schemas import FormField, FormOption, InspectedFile, UploadableFile
+from job_bot.data.schemas import FormField, FormOption, InspectedFile, UploadableFile
 
 
 def _field(**overrides: object) -> FormField:

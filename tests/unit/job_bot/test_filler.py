@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from job_bot.applier.greenhouse_applier import GreenHouseFiller
-from job_bot.schemas import FormField
+from job_bot.data.schemas import FormField
 
 
 def test_greenhouse_filler_uses_the_active_page(monkeypatch) -> None:

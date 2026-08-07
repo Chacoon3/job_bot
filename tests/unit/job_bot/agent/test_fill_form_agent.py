@@ -4,7 +4,7 @@ from langchain_core.tools import tool
 
 from job_bot.agent import fill_form_agent
 from job_bot.agent.fill_form_agent import _agent_answer_cache_key
-from job_bot.schemas import FormAnswer, FormField, User
+from job_bot.data.schemas import FormAnswer, FormField, User
 from job_bot.utils.redis_cache import RedisCache
 
 

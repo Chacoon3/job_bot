@@ -7,7 +7,6 @@ from langchain.messages import AIMessage
 from langgraph.graph import END
 from langgraph.runtime import Runtime
 
-from job_bot.adt import ApplicationStage, JobAgentState, JobPageType
 from job_bot.agent.nodes import (
     infer_application_stage,
     open_job_page,
@@ -24,6 +23,7 @@ from job_bot.agent.react_job_agent import (
     post_evaluate_router,
     post_tool_router,
 )
+from job_bot.data.adt import ApplicationStage, JobAgentState, JobPageType
 
 
 class FakePage:

@@ -13,9 +13,7 @@ from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
 from job_bot.config import settings
-from job_bot.db.user_models import User as ORMUser
-from job_bot.openai_client import get_async_openai_client
-from job_bot.schemas import (
+from job_bot.data.schemas import (
     DisabilityStatusOption,
     GenderOption,
     RaceEthnicityOption,
@@ -24,6 +22,8 @@ from job_bot.schemas import (
     VeteranStatusOption,
     YesNoOption,
 )
+from job_bot.db.user_models import User as ORMUser
+from job_bot.openai_client import get_async_openai_client
 from job_bot.users import delete_user, get_user, upsert_user, user_from_record
 from job_bot.utils.caching import AppDiskCache
 from job_bot.utils.hash_helper import model_schema_key

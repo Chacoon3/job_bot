@@ -11,8 +11,8 @@ from langchain_community.tools import BaseTool, tool
 from playwright.async_api import Page, expect
 
 from job_bot.config import settings
+from job_bot.data.schemas import DropdownOption, DropdownSnapshot, FormField, PageInspection
 from job_bot.openai_client import get_async_openai_client
-from job_bot.schemas import DropdownOption, DropdownSnapshot, FormField, PageInspection
 from job_bot.utils.browser_tools import BrowserSession, Locator
 from job_bot.utils.caching import AppRedisCache
 

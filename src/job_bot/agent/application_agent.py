@@ -12,8 +12,8 @@ from langchain_community.tools import BaseTool
 from pydantic import BaseModel
 
 from job_bot.agent.agent_graph import _Runtime, _State, get_react_agent_with_structured_output
+from job_bot.data.schemas import AgentInferredFormAnswer, FormAnswer, FormField, User
 from job_bot.llm import model_fingerprint
-from job_bot.schemas import AgentInferredFormAnswer, FormAnswer, FormField, User
 from job_bot.utils.caching import AppRedisCache
 from job_bot.utils.hash_helper import model_schema_key
 

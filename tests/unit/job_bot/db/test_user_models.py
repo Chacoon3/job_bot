@@ -3,8 +3,8 @@ from __future__ import annotations
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateIndex, CreateTable
 
+from job_bot.data.schemas import User
 from job_bot.db.user_models import User as ORMUser
-from job_bot.schemas import User
 
 
 def test_users_table_matches_the_pydantic_user_model() -> None:

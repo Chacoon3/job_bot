@@ -5,8 +5,8 @@ from uuid import uuid4
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from job_bot.data.schemas import User
 from job_bot.db.user_models import User as ORMUser
-from job_bot.schemas import User
 
 
 def canonical_email(email: str) -> str:

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
 from job_bot.countries import regulate_country, regulate_phone_country_code
-from job_bot.schemas import (
+from job_bot.data.schemas import (
     DisabilityOption,
     DisabilityStatusOption,
     GenderOption,

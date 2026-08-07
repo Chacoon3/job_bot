@@ -14,10 +14,10 @@ from langchain.messages import HumanMessage, SystemMessage
 from playwright.sync_api import Page, PlaywrightContextManager, sync_playwright
 from pydantic import BaseModel
 
+from job_bot.data.schemas import JobEntrySchema
 from job_bot.greenhouse.service import CompanyCareerSiteList
 from job_bot.job_providers.job_provider import JobProvider
 from job_bot.llm import LLMProvider
-from job_bot.schemas import JobEntrySchema
 from job_bot.utils.caching import AppDiskCache
 
 logger = structlog.get_logger(__name__)

@@ -14,10 +14,10 @@ from playwright.async_api import async_playwright
 from pydantic import BaseModel
 from structlog import get_logger
 
-from job_bot.adt import JobAgentContext
 from job_bot.agent.prompts import JOB_APPSYS_MSG_TEXT
+from job_bot.data.adt import JobAgentContext
+from job_bot.data.schemas import UploadableFile, User
 from job_bot.llm import LLMProvider
-from job_bot.schemas import UploadableFile, User
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 from job_bot.utils.decorators import log_upon_exit
 

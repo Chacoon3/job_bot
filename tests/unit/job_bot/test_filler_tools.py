@@ -11,7 +11,7 @@ from job_bot.agent.filler_tools import (
     llm_infer_correct_dropdown_option,
     select_dropdown_option,
 )
-from job_bot.schemas import DropdownSnapshot
+from job_bot.data.schemas import DropdownSnapshot
 
 
 def test_fill_text_field_accepts_canonical_phone_match() -> None:

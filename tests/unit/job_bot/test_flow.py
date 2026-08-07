@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 
 from job_bot.applier.flow import apply_job
-from job_bot.schemas import EducationDegree, JobEntrySchema, User
+from job_bot.data.schemas import EducationDegree, JobEntrySchema, User
 
 
 class FakeAsyncPlaywrightContext:

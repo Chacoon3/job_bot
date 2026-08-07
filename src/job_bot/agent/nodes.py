@@ -7,7 +7,7 @@ from langchain.tools import BaseTool
 from langgraph.runtime import Runtime
 from pydantic import BaseModel
 
-from job_bot.adt import JobAgentContext, JobAgentState, JobPageType
+from job_bot.data.adt import JobAgentContext, JobAgentState, JobPageType
 
 
 class PageTypeClassification(BaseModel):

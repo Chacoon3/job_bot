@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 import httpx
 from bs4 import BeautifulSoup
@@ -199,7 +199,7 @@ class GreenhouseJobSyncService:
                 jobs = self.pull_company_job_entries(
                     board.token,
                     client=client,
-                    transform=lambda raw_job, board=board: self._to_job_entry_record(
+                    transform=lambda raw_job, board=board: self.to_job_entry_record(
                         board,
                         raw_job,
                     ),
@@ -296,6 +296,14 @@ class GreenhouseJobSyncService:
                 Job.updated_at,
             ],
         )
+
+    @staticmethod
+    def to_job_entry_record(
+        board: GreenhouseBoard,
+        raw_job: Any,
+    ) -> Job | None:
+        """Convert a public Greenhouse job payload into the normalized job model."""
+        return GreenhouseJobSyncService._to_job_entry_record(board, raw_job)
 
     @staticmethod
     def _to_job_entry_record(

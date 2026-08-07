@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from job_bot.schemas import UploadableFile
+from job_bot.data.schemas import UploadableFile
 from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 
 

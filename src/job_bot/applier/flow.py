@@ -8,8 +8,8 @@ import structlog
 from pydantic import BaseModel, Field
 
 from job_bot.config import settings
+from job_bot.data.schemas import ApplicationStatus, JobEntrySchema, User
 from job_bot.llm import OpenAILLMProvider
-from job_bot.schemas import ApplicationStatus, JobEntrySchema, User
 
 logger = structlog.get_logger(__name__)
 

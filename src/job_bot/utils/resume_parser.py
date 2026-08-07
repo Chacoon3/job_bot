@@ -3,8 +3,8 @@ from functools import cache
 from langchain.chat_models import BaseChatModel
 from langchain.messages import HumanMessage, SystemMessage
 
+from job_bot.data.schemas import User
 from job_bot.llm import OpenAILLMProvider
-from job_bot.schemas import User
 
 
 @cache

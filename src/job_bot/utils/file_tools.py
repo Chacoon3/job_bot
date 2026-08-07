@@ -5,7 +5,7 @@ from typing import BinaryIO, TypeAlias
 from pypdf import PdfReader
 from starlette.datastructures import UploadFile
 
-from job_bot.schemas import UploadableFile
+from job_bot.data.schemas import UploadableFile
 
 FileContent: TypeAlias = bytes | bytearray | memoryview | BinaryIO
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from job_bot.api import api_v1 as job
-from job_bot.schemas import JobEntrySchema
+from job_bot.data.schemas import JobEntrySchema
 
 
 class DummySession:

@@ -5,10 +5,10 @@ from unittest.mock import Mock
 
 import pytest
 
+from job_bot.data.schemas import JobEntrySchema
 from job_bot.db.job_models import Job
 from job_bot.job_providers.greenhouse_job_provider import GreenHouseJobProvider
 from job_bot.job_providers.job_provider import JobProvider
-from job_bot.schemas import JobEntrySchema
 
 
 def _record() -> Job:

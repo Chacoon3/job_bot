@@ -15,9 +15,9 @@ from job_bot.applier.flow import (
     apply_jobs,
     find_jobs,
 )
+from job_bot.data.schemas import JobEntrySchema, User
 from job_bot.db.job_models import Job
 from job_bot.db.upsert import batched_upsert
-from job_bot.schemas import JobEntrySchema, User
 
 router = APIRouter(prefix="/api", tags=["job_bot"])
 

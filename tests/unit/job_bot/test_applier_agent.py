@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 from pydantic import BaseModel
 
 from job_bot.agent.agent_graph import _Runtime, _State, get_react_agent_with_structured_output
-from job_bot.schemas import AgentInferredFormAnswer
+from job_bot.data.schemas import AgentInferredFormAnswer
 
 
 class _StatusAnswer(BaseModel):

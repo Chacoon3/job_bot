@@ -3,9 +3,9 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
+from job_bot.data.schemas import GreenhouseBoardSchema, JobEntrySchema, User
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import Job
-from job_bot.schemas import GreenhouseBoardSchema, JobEntrySchema, User
 
 
 def test_job_entry_schema_round_trips_job() -> None:

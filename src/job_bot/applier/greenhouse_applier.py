@@ -20,9 +20,9 @@ from job_bot.agent.filler_tools import (
     locate_by_accessible_name,
     select_dropdown_option,
 )
+from job_bot.data.schemas import FormAnswer, FormField, JobFormFieldKey, UploadableFile, YesNoOption
 from job_bot.exceptions import IncompleteApplicationError
 from job_bot.llm import OpenAILLMProvider
-from job_bot.schemas import FormAnswer, FormField, JobFormFieldKey, UploadableFile, YesNoOption
 from job_bot.utils.browser_tools import BrowserSession
 from job_bot.utils.file_tools import is_same_file_content
 

@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 import structlog
 
-from job_bot.schemas import JobEntrySchema
+from job_bot.data.schemas import JobEntrySchema
 
 logger = structlog.get_logger(__name__)
 

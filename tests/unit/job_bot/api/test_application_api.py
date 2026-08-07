@@ -5,8 +5,8 @@ from fastapi.testclient import TestClient
 
 from job_bot.api import api_v2, dependencies
 from job_bot.applications import ApplicationRunResult
+from job_bot.data.schemas import User
 from job_bot.main import app
-from job_bot.schemas import User
 
 
 def _user() -> User:

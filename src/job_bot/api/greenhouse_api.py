@@ -10,11 +10,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
+from job_bot.data.schemas import GreenhouseBoardSchema
 from job_bot.greenhouse.jobs import GreenhouseBoardSyncPolicy
 from job_bot.greenhouse.models import DiscoveryConfig, DiscoveryReport
 from job_bot.greenhouse.repository import list_boards, upsert_boards
 from job_bot.llm import OpenAILLMProvider
-from job_bot.schemas import GreenhouseBoardSchema
 
 router = APIRouter(prefix="/api", tags=["job_bot"])
 
