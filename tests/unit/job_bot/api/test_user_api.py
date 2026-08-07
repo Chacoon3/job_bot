@@ -146,9 +146,9 @@ def test_get_user_returns_the_current_user(monkeypatch) -> None:
     user_id = uuid4()
     session = DummySession()
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(user, "get_user", lambda *_args: _record(user_id))
+    monkeypatch.setattr(user, "get_user_by_id", lambda *_args: _record(user_id))
 
-    response = TestClient(app).get("/apiv1/user/alex@example.com")
+    response = TestClient(app).get(f"/apiv1/user/{user_id}")
 
     app.dependency_overrides.clear()
 
@@ -160,9 +160,9 @@ def test_get_user_returns_the_current_user(monkeypatch) -> None:
 
 def test_get_user_returns_not_found(monkeypatch) -> None:
     app.dependency_overrides[dependencies.get_session] = lambda: DummySession()
-    monkeypatch.setattr(user, "get_user", lambda *_args: None)
+    monkeypatch.setattr(user, "get_user_by_id", lambda *_args: None)
 
-    response = TestClient(app).get("/apiv1/user/missing@example.com")
+    response = TestClient(app).get(f"/apiv1/user/{uuid4()}")
 
     app.dependency_overrides.clear()
 
@@ -190,11 +190,16 @@ def test_update_user_replaces_current_data(monkeypatch) -> None:
         return record
 
     app.dependency_overrides[dependencies.get_session] = lambda: session
+    monkeypatch.setattr(user, "get_user_by_id", lambda *_args: _record(user_id))
     monkeypatch.setattr(user, "_extract_user", AsyncMock(return_value=extracted))
-    monkeypatch.setattr(user, "upsert_user", fake_upsert)
+    monkeypatch.setattr(
+        user,
+        "replace_user_record",
+        lambda *_args, **kwargs: fake_upsert(session, **kwargs),
+    )
 
     response = TestClient(app).put(
-        "/apiv1/user/alex@example.com",
+        f"/apiv1/user/{user_id}",
         data={
             "authorized_to_work": "yes",
             "requires_sponsorship": "no",
@@ -244,13 +249,14 @@ def test_create_user_upserts_by_extracted_email(monkeypatch) -> None:
     assert "user_id" not in captured
 
 
-def test_update_user_rejects_mismatched_email(monkeypatch) -> None:
+def test_update_user_returns_not_found_when_id_does_not_exist(monkeypatch) -> None:
     session = DummySession()
+    user_id = uuid4()
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(user, "_extract_user", AsyncMock(return_value=_user()))
+    monkeypatch.setattr(user, "get_user_by_id", lambda *_args: None)
 
     response = TestClient(app).put(
-        "/apiv1/user/different@example.com",
+        f"/apiv1/user/{user_id}",
         data={
             "authorized_to_work": "yes",
             "requires_sponsorship": "no",
@@ -261,27 +267,27 @@ def test_update_user_rejects_mismatched_email(monkeypatch) -> None:
 
     app.dependency_overrides.clear()
 
-    assert response.status_code == 409
+    assert response.status_code == 404
     assert session.committed is False
 
 
-def test_delete_user_permanently_deletes_by_email(monkeypatch) -> None:
+def test_delete_user_permanently_deletes_by_id(monkeypatch) -> None:
     user_id = uuid4()
     session = DummySession()
     captured: dict[str, object] = {}
 
-    def fake_delete(received_session, email):
-        captured.update(session=received_session, email=email)
+    def fake_delete(received_session, received_user_id):
+        captured.update(session=received_session, user_id=received_user_id)
         return _record(user_id)
 
     app.dependency_overrides[dependencies.get_session] = lambda: session
     monkeypatch.setattr(user, "delete_user", fake_delete)
 
-    response = TestClient(app).delete("/apiv1/user/alex@example.com")
+    response = TestClient(app).delete(f"/apiv1/user/{user_id}")
 
     app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert "deleted_at" not in response.json()
-    assert captured["email"] == "alex@example.com"
+    assert captured["user_id"] == user_id
     assert session.committed is True

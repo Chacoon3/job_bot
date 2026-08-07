@@ -16,7 +16,7 @@ from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.greenhouse.jobs import GreenhouseJobSyncService
 from job_bot.greenhouse.repository import list_boards
 from job_bot.transaction.applications import run_application_once
-from job_bot.transaction.users import canonical_email, get_user, user_from_record
+from job_bot.transaction.users import canonical_email, get_user_by_email, user_from_record
 from job_bot.utils.file_tools import extract_uploadable_file
 
 router = APIRouter(prefix="/apiv2/job", tags=["job_bot"])
@@ -168,7 +168,7 @@ async def apply_job(
             detail="Job URL is required",
         )
 
-    user_record = get_user(session, email)
+    user_record = get_user_by_email(session, email)
     if user_record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

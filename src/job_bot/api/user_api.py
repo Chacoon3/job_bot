@@ -6,9 +6,10 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
@@ -25,7 +26,15 @@ from job_bot.data.schemas import (
 )
 from job_bot.db.user_models import User as ORMUser
 from job_bot.openai_client import get_async_openai_client
-from job_bot.transaction.users import delete_user, get_user, upsert_user, user_from_record
+from job_bot.transaction.users import (
+    delete_user,
+    get_user_by_id,
+)
+from job_bot.transaction.users import update_user as replace_user_record
+from job_bot.transaction.users import (
+    upsert_user,
+    user_from_record,
+)
 from job_bot.utils.caching import AppDiskCache
 from job_bot.utils.hash_helper import model_schema_key
 
@@ -224,12 +233,12 @@ def _response(record: ORMUser) -> UserResponse:
     )
 
 
-@router.get("/{email}")
+@router.get("/{user_id}")
 def read_user(
-    email: EmailStr,
+    user_id: UUID,
     session: Annotated[Session, Depends(get_session)],
 ) -> UserResponse:
-    record = get_user(session, str(email))
+    record = get_user_by_id(session, user_id)
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -252,19 +261,24 @@ async def create_user(
     )
 
 
-@router.put("/{email}")
-async def update_user(
-    email: EmailStr,
+@router.put("/{user_id}")
+async def replace_existing_user(
+    user_id: UUID,
     supplement: Annotated[UserSupplement, Depends(_supplement_from_form)],
     resume: Annotated[UploadFile, File(description="PDF or Word resume, up to 10 MiB")],
     session: Annotated[Session, Depends(get_session)],
 ) -> UserResponse:
-    """Replace a user identified by email address."""
+    """Replace a user identified by its immutable identifier."""
+    if get_user_by_id(session, user_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
     return await _upsert_user_from_upload(
         supplement=supplement,
         resume=resume,
         session=session,
-        expected_email=str(email),
+        user_id=user_id,
     )
 
 
@@ -273,7 +287,7 @@ async def _upsert_user_from_upload(
     supplement: UserSupplement,
     resume: UploadFile,
     session: Session,
-    expected_email: str | None = None,
+    user_id: UUID | None = None,
 ) -> UserResponse:
     filename = Path(resume.filename or "resume").name
     if Path(filename).suffix.casefold() not in SUPPORTED_RESUME_SUFFIXES:
@@ -295,28 +309,29 @@ async def _upsert_user_from_upload(
         )
 
     user = await _extract_user(content, filename, supplement)
-    if expected_email is not None and user.email != expected_email.casefold():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Resume email does not match the user email in the request path",
-        )
-    record = upsert_user(
-        session,
-        user=user,
-        resume_filename=filename,
-        resume_sha256=hashlib.sha256(content).hexdigest(),
+    values = {
+        "user": user,
+        "resume_filename": filename,
+        "resume_sha256": hashlib.sha256(content).hexdigest(),
+    }
+    record = (
+        replace_user_record(session, user_id=user_id, **values)
+        if user_id is not None
+        else upsert_user(session, **values)
     )
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     session.commit()
     session.refresh(record)
     return _response(record)
 
 
-@router.delete("/{email}")
+@router.delete("/{user_id}")
 def remove_user(
-    email: EmailStr,
+    user_id: UUID,
     session: Annotated[Session, Depends(get_session)],
 ) -> UserResponse:
-    record = delete_user(session, str(email))
+    record = delete_user(session, user_id)
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

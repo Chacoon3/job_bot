@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -20,10 +20,15 @@ def user_from_record(record: ORMUser) -> User:
     )
 
 
-def get_user(session: Session, email: str) -> ORMUser | None:
+def get_user_by_email(session: Session, email: str) -> ORMUser | None:
     """Return a user by canonical email address."""
     statement = select(ORMUser).where(ORMUser.email == canonical_email(email))
     return session.scalars(statement).first()
+
+
+def get_user_by_id(session: Session, user_id: UUID) -> ORMUser | None:
+    """Return a user by its immutable identifier."""
+    return session.get(ORMUser, user_id)
 
 
 def upsert_user(
@@ -40,7 +45,7 @@ def upsert_user(
         {"email": email},
     )
 
-    record = get_user(session, email)
+    record = get_user_by_email(session, email)
     values = user.model_dump(mode="json")
     if record is None:
         record = ORMUser(
@@ -60,9 +65,30 @@ def upsert_user(
     return record
 
 
-def delete_user(session: Session, email: str) -> ORMUser | None:
-    """Permanently delete a user by email address."""
-    record = get_user(session, email)
+def update_user(
+    session: Session,
+    *,
+    user_id: UUID,
+    user: User,
+    resume_filename: str,
+    resume_sha256: str,
+) -> ORMUser | None:
+    """Replace an existing user identified by its immutable identifier."""
+    record = get_user_by_id(session, user_id)
+    if record is None:
+        return None
+
+    for field_name, value in user.model_dump(mode="json").items():
+        setattr(record, field_name, value)
+    record.resume_filename = resume_filename
+    record.resume_sha256 = resume_sha256
+    session.flush()
+    return record
+
+
+def delete_user(session: Session, user_id: UUID) -> ORMUser | None:
+    """Permanently delete a user by its immutable identifier."""
+    record = get_user_by_id(session, user_id)
     if record is None:
         return None
 
