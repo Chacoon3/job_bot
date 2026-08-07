@@ -24,12 +24,12 @@ class _State(BaseModel):
     A dictionary that holds the state of the application process.
     """
 
-    messages: Annotated[list[AnyMessage], add_messages]
+    messages: Annotated[list[AnyMessage], add_messages] = Field(default_factory=list)
     call_count: Annotated[int, add] = 0
     tool_call_count: Annotated[int, add] = 0
     failure_count: Annotated[int, add] = 0
     retry_count: Annotated[int, add] = 0
-    answers: Annotated[list[_FormAnswer], add] = []
+    answers: Annotated[list[_FormAnswer], add] = Field(default_factory=list)
 
 
 class _Runtime(BaseModel):
@@ -59,8 +59,8 @@ async def _act(state: _State, runtime: Runtime[_Runtime]) -> _State:
     # Here you would implement the logic to perform an action based on the current state and runtime.
     # This could involve interacting with the browser session, sending messages to the model, etc.
 
-    resp = await runtime.context.model_with_browser_tools.ainvoke(state.messages)
-    return _State(messages=[resp], call_count=1, answers=state.answers)
+    msg = await runtime.context.model_with_browser_tools.ainvoke(state.messages)
+    return _State(messages=[msg], call_count=1, answers=state.answers)
 
 
 async def _use_tool(

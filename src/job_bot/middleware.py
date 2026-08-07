@@ -5,12 +5,16 @@ from uuid import uuid4
 
 import structlog
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from job_bot.config import settings
 
 logger = structlog.get_logger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
+LOCAL_APP_ENV = "local"
 
 
 class RequestLoggingMiddleware:
@@ -18,6 +22,7 @@ class RequestLoggingMiddleware:
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
+        self.render_server_errors = _should_render_server_errors()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -49,14 +54,19 @@ class RequestLoggingMiddleware:
             )
             try:
                 await self.app(scope, receive, send_with_request_id)
-            except Exception:
+            except Exception as exc:
+                status_code = 500
                 logger.exception(
                     "http_request_failed",
                     method=method,
                     path=path,
                     duration_ms=_duration_ms(started_at),
                 )
-                raise
+                response = JSONResponse(
+                    status_code=status_code,
+                    content=_server_error_payload(exc, self.render_server_errors),
+                )
+                await response(scope, receive, send_with_request_id)
 
             logger.info(
                 "http_request_completed",
@@ -75,3 +85,16 @@ def register_middleware(app: FastAPI) -> None:
 
 def _duration_ms(started_at: int) -> float:
     return round((perf_counter_ns() - started_at) / 1_000_000, 3)
+
+
+def _server_error_payload(exc: Exception, render_server_errors: bool) -> dict[str, str]:
+    if render_server_errors:
+        return {
+            "detail": str(exc) or "Internal Server Error",
+            "error": exc.__class__.__name__,
+        }
+    return {"detail": "Internal Server Error"}
+
+
+def _should_render_server_errors() -> bool:
+    return settings().APP_ENV.strip().lower() == LOCAL_APP_ENV
