@@ -63,7 +63,7 @@ def test_get_company_jobs_fetches_named_boards_filters_and_sorts(monkeypatch) ->
     monkeypatch.setattr(job_api, "GreenhouseJobSyncService", FakeService)
     try:
         response = TestClient(app).get(
-            "/apiv2/job/",
+            "/api/job/",
             params={"company_names": "Acme, Beta", "limit": 10},
         )
     finally:
@@ -90,7 +90,7 @@ def test_get_company_jobs_uses_three_random_boards_without_company_names(monkeyp
     app.dependency_overrides[dependencies.get_session] = lambda: session
     monkeypatch.setattr(job_api, "GreenhouseJobSyncService", FakeService)
     try:
-        response = TestClient(app).get("/apiv2/job/", params={"posted_after": "2026-01-01"})
+        response = TestClient(app).get("/api/job/", params={"posted_after": "2026-01-01"})
     finally:
         app.dependency_overrides.clear()
 
@@ -121,7 +121,7 @@ def test_get_company_jobs_falls_back_to_company_slug_when_board_is_missing(monke
     monkeypatch.setattr(job_api, "GreenhouseJobSyncService", FakeService)
     try:
         response = TestClient(app).get(
-            "/apiv2/job/",
+            "/api/job/",
             params={"company_names": "Known Company, Acme & Co."},
         )
     finally:
@@ -134,7 +134,7 @@ def test_get_company_jobs_falls_back_to_company_slug_when_board_is_missing(monke
 def test_get_company_jobs_rejects_an_empty_company_names_filter() -> None:
     app.dependency_overrides[dependencies.get_session] = lambda: DummySession()
     try:
-        response = TestClient(app).get("/apiv2/job/", params={"company_names": " , "})
+        response = TestClient(app).get("/api/job/", params={"company_names": " , "})
     finally:
         app.dependency_overrides.clear()
 

@@ -5,11 +5,8 @@ import uvicorn
 
 
 def main() -> None:
-    if sys.platform == "win32":
-        # Psycopg's async connection uses readiness-based file-descriptor APIs,
-        # which are not implemented by Windows' default Proactor event loop.
 
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    loop = asyncio.SelectorEventLoop if sys.platform == "win32" else "auto"
 
     uvicorn.run(
         "job_bot.app_def:app",
@@ -17,6 +14,7 @@ def main() -> None:
         port=8080,
         reload=False,
         log_config=None,
+        loop=loop,
     )
 
 

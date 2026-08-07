@@ -19,7 +19,7 @@ from job_bot.transaction.applications import run_application_once
 from job_bot.transaction.users import canonical_email, get_user_by_email, user_from_record
 from job_bot.utils.file_tools import extract_uploadable_file
 
-router = APIRouter(prefix="/apiv2/job", tags=["job_bot"])
+router = APIRouter(prefix="/api/job", tags=["job_bot"])
 
 
 class ApplicationAttemptResponse(BaseModel):

@@ -127,7 +127,7 @@ docker run --rm -p 8081:8080 job-bot-browser:local
 
 The browser-worker exposes the same authenticated API surface, with
 `BROWSER_AUTOMATION_ENABLED=true` and Chromium installed. Route `/api/jobs/load`,
-`/api/apply`, `/api/find_and_apply`, and `/apiv2/apply` to this service. The
+`/api/apply`, `/api/find_and_apply`, and `/api/job/apply` to this service. The
 default target keeps health, user, database, and non-browser discovery routes in
 the smaller API image.
 

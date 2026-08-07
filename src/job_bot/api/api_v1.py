@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from importlib import import_module
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -119,25 +119,3 @@ def api_find_jobs() -> list[JobEntrySchema]:
 
     jobs = find_jobs(criteria)
     return jobs
-
-
-@router.post("/user")
-async def user(request: Request) -> dict[str, str]:
-    form = await request.form()
-    uploaded_file = form.get("file")
-
-    if not uploaded_file:
-        return {"error": "No file uploaded"}
-
-    # Check if file is PDF or Word document
-    filename = uploaded_file.filename
-    if not (filename.endswith(".pdf") or filename.endswith((".doc", ".docx"))):
-        return {"error": "File must be PDF or Word document"}
-
-    # Read file content
-    content = await uploaded_file.read()
-
-    # Convert to string and generate a user profile.
-    profile = User.from_document(content, filename)
-
-    return {"profile": str(profile)}

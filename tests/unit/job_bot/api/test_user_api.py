@@ -82,7 +82,7 @@ def test_extract_user_uploads_resume_and_merges_authoritative_answers(monkeypatc
     monkeypatch.setattr(user, "get_async_openai_client", lambda: client)
 
     result = asyncio.run(
-        user._extract_user.__wrapped__(
+        user._llm_extract_user.__wrapped__(
             b"resume bytes",
             "resume.pdf",
             _supplement(),
@@ -108,7 +108,7 @@ def test_extract_user_deletes_upload_when_parsing_fails(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="did not return a parsed User"):
         asyncio.run(
-            user._extract_user.__wrapped__(
+            user._llm_extract_user.__wrapped__(
                 b"resume bytes",
                 "resume.pdf",
                 _supplement(),
@@ -120,7 +120,7 @@ def test_extract_user_deletes_upload_when_parsing_fails(monkeypatch) -> None:
 
 def test_user_cache_key_covers_every_extraction_input(monkeypatch) -> None:
     monkeypatch.setenv("JOB_BOT_LLM_MODEL", "model-a")
-    function = user._extract_user.__wrapped__
+    function = user._llm_extract_user.__wrapped__
     supplement = _supplement()
 
     base = user._user_cache_key(function, (b"resume bytes", "resume.pdf", supplement), {})

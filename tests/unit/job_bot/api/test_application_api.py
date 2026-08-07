@@ -52,7 +52,7 @@ def test_apply_returns_prior_success_without_running_browser(monkeypatch) -> Non
     app.dependency_overrides[dependencies.require_browser_automation] = lambda: None
     try:
         response = TestClient(app).post(
-            "/apiv2/job/apply",
+            "/api/job/apply",
             data={
                 "email": "alex@example.com",
                 "job_url": "https://example.com/jobs/1",
@@ -96,7 +96,7 @@ def test_apply_reports_an_attempt_already_in_progress(monkeypatch) -> None:
     app.dependency_overrides[dependencies.require_browser_automation] = lambda: None
     try:
         response = TestClient(app).post(
-            "/apiv2/job/apply",
+            "/api/job/apply",
             data={
                 "email": "alex@example.com",
                 "job_url": "https://example.com/jobs/1",
