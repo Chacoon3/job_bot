@@ -691,11 +691,19 @@ def build_greenhouse_tools(
     """
 
     @tool(
+        name_or_callable="browser_read_page",
+        description="Read visible text from the current page. Specify max_chars to truncate the result.",
+    )
+    async def browser_read_page(max_chars: int = 20_000) -> str:
+        """Read visible text from the current page, truncated to max_chars."""
+        text = await browser_session.page().locator("body").inner_text()
+        return text[:max_chars]
+
+    @tool(
         name_or_callable="inspect_page",
         description=(
             "Inspect the current page and return a JSON representation of all "
             "interactive form fields, including their accessible names, types, "
-            "This tool does not modify the page."
         ),
     )
     async def inspect_page_tool() -> PageInspection:
@@ -718,7 +726,7 @@ def build_greenhouse_tools(
         await fill_text_field(locator, value)
 
     if mode == "read":
-        return [inspect_page_tool]
+        return [inspect_page_tool, browser_read_page]
     if mode == "write":
         return [fill_text_field_tool]
-    return [inspect_page_tool, fill_text_field_tool]
+    return [inspect_page_tool, fill_text_field_tool, browser_read_page]

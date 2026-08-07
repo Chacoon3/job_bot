@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import inspect
+import json
+from collections.abc import Callable
 from functools import cache
 from operator import add
-from typing import Annotated
+from typing import Annotated, Any
 
 from langchain.chat_models import BaseChatModel
 from langchain.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
@@ -16,7 +20,59 @@ from pydantic import BaseModel, ConfigDict, Field
 from structlog import get_logger
 
 from job_bot.config import settings
-from job_bot.schemas import FormField, User
+from job_bot.llm import model_fingerprint
+from job_bot.schemas import AgentInferredFormAnswer, FormAnswer, FormField, User
+from job_bot.utils.caching import AppRedisCache
+from job_bot.utils.hash_helper import model_schema_key
+
+ANSWER_CACHE_VERSION = 1
+ANSWER_CACHE_TTL_SECONDS = 60 * 60 * 24 * 7
+
+
+def _tool_cache_payload(tool: BaseTool) -> dict[str, Any]:
+    """Return the stable parts of a tool definition that affect agent behavior."""
+    return {
+        "type": f"{type(tool).__module__}.{type(tool).__qualname__}",
+        "name": tool.name,
+        "description": tool.description,
+        "input_schema": tool.get_input_schema().model_json_schema(),
+        "response_format": tool.response_format,
+        "return_direct": tool.return_direct,
+    }
+
+
+def _agent_answer_cache_key(
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> str:
+    """Key agent answers by semantic inputs and their validation schemas."""
+    bound = inspect.signature(func).bind(*args, **kwargs)
+    model: BaseChatModel = bound.arguments["model"]
+    tools: list[BaseTool] = bound.arguments["tools"]
+    fields: list[FormField] = bound.arguments["fields"]
+    user: User = bound.arguments["user"]
+    payload = {
+        "cache_version": ANSWER_CACHE_VERSION,
+        "model": model_fingerprint(model),
+        "tools": [_tool_cache_payload(tool) for tool in tools],
+        "fields": [field.model_dump(mode="json") for field in fields],
+        "user": user.model_dump(mode="json"),
+        "schemas": {
+            "field": model_schema_key(FormField),
+            "user": model_schema_key(User),
+            "answer": model_schema_key(FormAnswer),
+            "agent_answer": model_schema_key(AgentInferredFormAnswer),
+        },
+    }
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    digest = hashlib.sha256(canonical.encode()).hexdigest()
+    return f"agent_infer_answer_v{ANSWER_CACHE_VERSION}_{digest}"
 
 
 class _State(BaseModel):
@@ -29,7 +85,7 @@ class _State(BaseModel):
     tool_call_count: Annotated[int, add] = 0
     failure_count: Annotated[int, add] = 0
     retry_count: Annotated[int, add] = 0
-    answers: Annotated[list[_FormAnswer], add] = Field(default_factory=list)
+    answers: Annotated[list[FormAnswer], add] = Field(default_factory=list)
 
 
 class _Runtime(BaseModel):
@@ -56,7 +112,8 @@ async def _act(state: _State, runtime: Runtime[_Runtime]) -> _State:
         _State: The updated state of the application process.
     """
 
-    # Here you would implement the logic to perform an action based on the current state and runtime.
+    # Here you would implement the logic to perform an action based on the
+    # current state and runtime.
     # This could involve interacting with the browser session, sending messages to the model, etc.
 
     msg = await runtime.context.model_with_browser_tools.ainvoke(state.messages)
@@ -133,10 +190,18 @@ async def _evaluate(state: _State, runtime: Runtime[_Runtime]) -> _State:
     """
     if not state.messages:
         raise RuntimeError("Agent state contains no messages.")
-    structured = runtime.context.model.with_structured_output(_AgentInferredFormAnswer)
-    msg: _AgentInferredFormAnswer = await structured.ainvoke(
+    structured = runtime.context.model.with_structured_output(AgentInferredFormAnswer)
+    msg: AgentInferredFormAnswer = await structured.ainvoke(
         state.messages
-        + [HumanMessage(content="Provide the inferred answers for the form fields in JSON format.")]
+        + [
+            HumanMessage(
+                content=(
+                    "Based on the above, convert the answers to an object. "
+                    f"The schema is {AgentInferredFormAnswer.model_json_schema()}. "
+                    "Return the object as JSON and nothing else."
+                )
+            )
+        ]
     )
     return _State(call_count=0, answers=msg.answers)
 
@@ -189,26 +254,13 @@ def _get_answer_agent() -> CompiledStateGraph[_State, _Runtime]:
     return agent
 
 
-class _FormAnswer(BaseModel):
-    """
-    A Pydantic model that holds the inferred answer for a form field.
-    """
-
-    field_accessible_name: str = Field(..., description="The name of the form field.")
-    answer: str = Field(..., description="The inferred answer for the form field.")
-
-
-class _AgentInferredFormAnswer(BaseModel):
-    """
-    A Pydantic model that holds the inferred answer for a form field.
-    """
-
-    answers: list[_FormAnswer] = Field(..., description="The inferred answers for the form fields.")
-
-
+@AppRedisCache.cached(
+    key_builder=_agent_answer_cache_key,
+    ttl=ANSWER_CACHE_TTL_SECONDS,
+)
 async def agent_infer_interactive_element_answer(
     model: BaseChatModel, tools: list[BaseTool], fields: list[FormField], user: User
-) -> list[_FormAnswer]:
+) -> list[FormAnswer]:
     """
     Ask the agent to infer the answer for an interactive form element on a web page.
 
@@ -235,9 +287,15 @@ async def agent_infer_interactive_element_answer(
                     "candidate data and never invent answers. Your task is to infer the "
                     "correct answer for a list of form fields based on the user's information and "
                     "the accessible names of the form fields. "
-                    "Call inspect_page to understand the context of the fields. "
-                    "After receiving the inspection result, return the answer as plain text and stop. "
+                    "After analyzing the webpage content, return the answer in the format of a "
+                    "JSON array of objects with the accessible name and the answer. "
+                    f"The inner object's schema should be {FormAnswer.model_json_schema()}. "
                     "Do not take any action on the web page or fill in the form field yourself. "
+                    "If the form elements include privacy consent like receiving marketing emails "
+                    "or agreeing to text messages, answer 'No' or 'Decline' for those fields as "
+                    "long as it does not stop the form submission. Note that your answer should be "
+                    "application-ready. The user will directly copy and paste your answer into the "
+                    "form fields. "
                     "The user's information is in JSON format as follows:\n"
                     f"{user.model_dump_json()}"
                 )
@@ -246,11 +304,11 @@ async def agent_infer_interactive_element_answer(
                 content=(
                     "Based on the information about me, come up with the correct answer "
                     "for the following form fields denoted by their accessible names "
-                    f"'{', '.join(field.accessible_name for field in fields)}'. Return the answer as plain text and nothing else."
+                    f"'{', '.join(field.accessible_name for field in fields)}'."
                 )
             ),
         ]
     )
 
-    resp = await _get_answer_agent().ainvoke(state, context=runtime)
-    return state.answers
+    result = await _get_answer_agent().ainvoke(state, context=runtime)
+    return result["answers"]

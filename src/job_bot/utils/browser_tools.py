@@ -132,6 +132,10 @@ class BrowserSession:
 def build_browser_tools(session: BrowserSession) -> list[BaseTool]:
     """Build async-only tools over an already-started browser session."""
 
+    @tool(
+        name_or_callable="prepare_for_interaction",
+        description="Wait for an element to be visible and scroll it into view.",
+    )
     async def prepare_for_interaction(locator: Locator) -> None:
         await locator.wait_for(state="visible", timeout=5_000)
         await locator.scroll_into_view_if_needed(timeout=5_000)

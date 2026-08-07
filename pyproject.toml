@@ -107,6 +107,7 @@ disable = [
     "R0911",  # Too many return statements
     "E1121",
     "E1101",
+    "C0415",  # Import outside toplevel
 ]
 
 [tool.pylint.format]

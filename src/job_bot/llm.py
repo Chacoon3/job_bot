@@ -1,6 +1,11 @@
+import json
 from abc import ABC, abstractmethod
+from hashlib import sha256
 from importlib import import_module
 from typing import Any
+
+import regex
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from job_bot.config import setting_value, settings
 
@@ -13,6 +18,9 @@ def _resolve_secret(explicit: str | None, env_var: str) -> str:
 
 
 class LLMProvider(ABC):
+    def __init__(self, model: str | None = None) -> None:
+        self.model = model or settings().JOB_BOT_LLM_MODEL
+
     @abstractmethod
     def get_model(self) -> Any:
         raise NotImplementedError
@@ -21,13 +29,13 @@ class LLMProvider(ABC):
 class OpenAILLMProvider(LLMProvider):
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
+        model: str | None = None,
         temperature: float = 0.0,
         api_key: str | None = None,
         base_url: str | None = None,
         parallel_tool_calls: bool | None = None,
     ) -> None:
-        self.model = model
+        super().__init__(model)
         self.temperature = temperature
         self.api_key = api_key
         self.base_url = base_url
@@ -35,28 +43,30 @@ class OpenAILLMProvider(LLMProvider):
 
     def get_model(self) -> Any:
         # Provider SDKs are intentionally loaded only when this provider is used.
-        chat_openai = import_module("langchain_openai").ChatOpenAI
-        return chat_openai(
+        from langchain_openai import ChatOpenAI
+
+        model_args = {}
+        if self.parallel_tool_calls is not None:
+            model_args["parallel_tool_calls"] = self.parallel_tool_calls
+        if regex.search("^gpt-.*-luna$", self.model or ""):
+            model_args["reasoning_effort"] = "none"
+        return ChatOpenAI(
             model=self.model,
             temperature=self.temperature,
             api_key=_resolve_secret(self.api_key, "OPENAI_API_KEY"),
             base_url=self.base_url,
-            model_kwargs=(
-                {"parallel_tool_calls": self.parallel_tool_calls}
-                if self.parallel_tool_calls is not None
-                else {}
-            ),
+            model_kwargs=model_args,
         )
 
 
 class GeminiLLMProvider(LLMProvider):
     def __init__(
         self,
-        model: str = "gemini-2.5-flash",
+        model: str | None = None,
         temperature: float = 0.0,
         api_key: str | None = None,
     ) -> None:
-        self.model = model
+        super().__init__(model)
         self.temperature = temperature
         self.api_key = api_key
 
@@ -72,11 +82,11 @@ class GeminiLLMProvider(LLMProvider):
 class AnthropicLLMProvider(LLMProvider):
     def __init__(
         self,
-        model: str = "claude-sonnet-4-20250514",
+        model: str | None = None,
         temperature: float = 0.0,
         api_key: str | None = None,
     ) -> None:
-        self.model = model
+        super().__init__(model)
         self.temperature = temperature
         self.api_key = api_key
 
@@ -92,14 +102,14 @@ class AnthropicLLMProvider(LLMProvider):
 class HuggingFaceRemoteLLMProvider(LLMProvider):
     def __init__(
         self,
-        model: str,
+        model: str | None = None,
         temperature: float = 0.0,
         api_token: str | None = None,
         endpoint_url: str | None = None,
         provider: str | None = None,
         max_new_tokens: int = 512,
     ) -> None:
-        self.model = model
+        super().__init__(model)
         self.temperature = temperature
         self.api_token = api_token
         self.endpoint_url = endpoint_url
@@ -125,11 +135,11 @@ class HuggingFaceRemoteLLMProvider(LLMProvider):
 class OllamaLLMProvider(LLMProvider):
     def __init__(
         self,
-        model: str = "llama3.1",
+        model: str | None = None,
         temperature: float = 0.0,
         base_url: str | None = None,
     ) -> None:
-        self.model = model
+        super().__init__(model)
         self.temperature = temperature
         self.base_url = base_url or settings().OLLAMA_BASE_URL
 
@@ -140,3 +150,19 @@ class OllamaLLMProvider(LLMProvider):
             temperature=self.temperature,
             base_url=self.base_url,
         )
+
+
+def model_fingerprint(model: BaseChatModel) -> str:
+    payload = {
+        "type": f"{type(model).__module__}.{type(model).__qualname__}",
+        "params": model._identifying_params,  # pylint: disable=protected-access; intended use
+    }
+
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+
+    return sha256(canonical.encode()).hexdigest()

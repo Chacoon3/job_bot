@@ -21,7 +21,7 @@ from job_bot.agent.filler_tools import (
 )
 from job_bot.exceptions import IncompleteApplicationError
 from job_bot.llm import OpenAILLMProvider
-from job_bot.schemas import FormField, JobFormFieldKey, UploadableFile, YesNoOption
+from job_bot.schemas import FormAnswer, FormField, JobFormFieldKey, UploadableFile, YesNoOption
 from job_bot.utils.browser_tools import BrowserSession
 from job_bot.utils.file_tools import is_same_file_content
 
@@ -317,11 +317,11 @@ class GreenHouseFiller(BaseApplier):
             and field.accessible_name is not None
         ]
 
-        inferred_answers = await agent_infer_interactive_element_answer(
+        inferred_answers: list[FormAnswer] = await agent_infer_interactive_element_answer(
             OpenAILLMProvider().get_model(), tools, fields_to_fill, self.user
         )
-        answers_by_field_key = {
-            suggestion.field_key: suggestion.value for suggestion in inferred_answers.answers
+        answers_by_accessible_name = {
+            suggestion.field_accessible_name: suggestion.answer for suggestion in inferred_answers
         }
 
         for field in fields_to_fill:
@@ -334,11 +334,11 @@ class GreenHouseFiller(BaseApplier):
                     field_required=field.required,
                 )
 
-                if field.field_key not in answers_by_field_key:
+                if field.accessible_name not in answers_by_accessible_name:
                     get_logger().warning("No inferred answer returned for field.")
                     continue
 
-                answer = answers_by_field_key[field.field_key]
+                answer = answers_by_accessible_name[field.accessible_name]
                 if answer is None:
                     get_logger().warning("Inferred answer is empty; skipping field.")
                     continue
@@ -360,6 +360,16 @@ class GreenHouseFiller(BaseApplier):
                     "field_required",
                 )
 
+    async def submit(self, button_info: FormField) -> None:
+        submit_button_locator = locate_by_accessible_name(
+            self.browser_session.page(),
+            button_info.accessible_name,
+            "button",
+        )
+        await expect(submit_button_locator).to_be_visible(timeout=5000)
+        await submit_button_locator.click()
+        get_logger().info("Application submitted successfully.")
+
     async def apply(self) -> None:
 
         async with self.browser_session as browser_session:
@@ -374,4 +384,16 @@ class GreenHouseFiller(BaseApplier):
                 get_logger().warning("Incomplete application detected", error=str(e))
                 await self.llm_assist_incomplete_application(browser_session)
 
-            await asyncio.sleep(30)  # Wait for 3 seconds before final inspection
+            page_inspection = await inspect_page(browser_session.page())
+            submit_button = next(
+                (
+                    field
+                    for field in page_inspection.form_fields
+                    if field.interaction_strategy == "click" and field.field_key == "submit_button"
+                ),
+                None,
+            )
+            if submit_button is None:
+                raise IncompleteApplicationError("Submit button not found.")
+            await self.submit(submit_button)
+            await asyncio.sleep(10)  # Wait for 3 seconds before final inspection

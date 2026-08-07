@@ -411,3 +411,20 @@ class FormSuggestion(BaseModel):
 
 class InferredFormAnswers(BaseModel):
     answers: list[FormSuggestion] = Field(default_factory=list)
+
+
+class FormAnswer(BaseModel):
+    """
+    A Pydantic model that holds the inferred answer for a form field.
+    """
+
+    field_accessible_name: str = Field(..., description="The name of the form field.")
+    answer: str = Field(..., description="The inferred answer for the form field.")
+
+
+class AgentInferredFormAnswer(BaseModel):
+    """
+    A Pydantic model that holds the inferred answer for a form field.
+    """
+
+    answers: list[FormAnswer] = Field(..., description="The inferred answers for the form fields.")
