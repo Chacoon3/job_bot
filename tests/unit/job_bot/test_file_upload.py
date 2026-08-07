@@ -3,17 +3,9 @@ import io
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from starlette.datastructures import FormData, Headers, UploadFile
+from starlette.datastructures import Headers, UploadFile
 
 from job_bot.utils.file_tools import extract_uploadable_file, parse_pure_text_pdf
-
-
-class FakeRequest:
-    def __init__(self, form: FormData) -> None:
-        self._form = form
-
-    async def form(self) -> FormData:
-        return self._form
 
 
 def test_parse_pure_text_pdf_concatenates_page_text(monkeypatch) -> None:
@@ -30,7 +22,7 @@ def test_parse_pure_text_pdf_concatenates_page_text(monkeypatch) -> None:
         SimpleNamespace(extract_text=Mock(return_value="world")),
     ]
     pdf_reader_factory = Mock(side_effect=fake_pdf_reader)
-    monkeypatch.setattr("job_bot.utils.file_upload.PdfReader", pdf_reader_factory)
+    monkeypatch.setattr("job_bot.utils.file_tools.PdfReader", pdf_reader_factory)
 
     result = parse_pure_text_pdf(b"pdf-bytes")
 
@@ -45,9 +37,8 @@ def test_extract_uploadable_file_reads_multipart_file() -> None:
         filename="resume.pdf",
         headers=Headers({"content-type": "application/pdf"}),
     )
-    request = FakeRequest(FormData([("file", uploaded_file)]))
 
-    result = asyncio.run(extract_uploadable_file(request))
+    result = asyncio.run(extract_uploadable_file(uploaded_file))
 
     assert result.filename == "resume.pdf"
     assert result.content == b"resume-bytes"
@@ -56,16 +47,13 @@ def test_extract_uploadable_file_reads_multipart_file() -> None:
 
 def test_extract_uploadable_file_uses_default_mime_type() -> None:
     uploaded_file = UploadFile(file=io.BytesIO(b"data"), filename="resume.bin")
-    request = FakeRequest(FormData([("file", uploaded_file)]))
 
-    result = asyncio.run(extract_uploadable_file(request))
+    result = asyncio.run(extract_uploadable_file(uploaded_file))
 
     assert result.mime_type == "application/octet-stream"
 
 
-def test_extract_uploadable_file_ignores_non_file_form_field() -> None:
-    request = FakeRequest(FormData([("file", "not-a-file")]))
-
-    result = asyncio.run(extract_uploadable_file(request))
+def test_extract_uploadable_file_ignores_missing_file() -> None:
+    result = asyncio.run(extract_uploadable_file(None))
 
     assert result is None

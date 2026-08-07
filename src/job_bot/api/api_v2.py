@@ -2,7 +2,7 @@ from importlib import import_module
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -36,37 +36,39 @@ def GreenHouseFiller(*args: Any, **kwargs: Any) -> Any:  # pylint: disable=inval
 
 @router.post("/apply")
 async def apply_job(
-    request: Request,
     session: Annotated[Session, Depends(get_session)],
+    email: Annotated[str | None, Form()] = None,
+    resume: Annotated[UploadFile | None, File()] = None,
+    cover_letter: Annotated[UploadFile | None, File()] = None,
+    job_url: Annotated[str | None, Form()] = None,
     _browser_enabled: Annotated[None, Depends(require_browser_automation)] = None,
 ) -> ApplicationAttemptResponse:
-    form = await request.form()
-    email = form.get("email")
-    email = canonical_email(str(email))
+    email = canonical_email(email or "")
     if not email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email is required",
         )
 
-    resume = await extract_uploadable_file(request, "resume")
-    if not resume:
+    resume_file = await extract_uploadable_file(resume)
+    if not resume_file:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Resume is required",
         )
 
-    cover_letter = await extract_uploadable_file(request, "cover_letter")
+    cover_letter_file = await extract_uploadable_file(cover_letter)
 
-    application_file_set = ApplicationFileSet(resume=resume, cover_letter=cover_letter)
+    application_file_set = ApplicationFileSet(
+        resume=resume_file,
+        cover_letter=cover_letter_file,
+    )
 
-    job_url = form.get("job_url")
     if not job_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Job URL is required",
         )
-    job_url = str(job_url)
 
     user_record = get_user(session, email)
     if user_record is None:

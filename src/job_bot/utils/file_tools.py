@@ -2,7 +2,6 @@ import io
 from io import BytesIO
 from typing import BinaryIO, TypeAlias
 
-from fastapi import Request
 from pypdf import PdfReader
 from starlette.datastructures import UploadFile
 
@@ -11,12 +10,8 @@ from job_bot.schemas import UploadableFile
 FileContent: TypeAlias = bytes | bytearray | memoryview | BinaryIO
 
 
-async def extract_uploadable_file(
-    request: Request, file_key: str = "file"
-) -> UploadableFile | None:
-    """Extract the file stored under the given ``file_key`` in a multipart FastAPI request."""
-    form = await request.form()
-    uploaded_file = form.get(file_key)
+async def extract_uploadable_file(uploaded_file: UploadFile | None) -> UploadableFile | None:
+    """Convert an uploaded FastAPI file into an application upload value."""
     if not isinstance(uploaded_file, UploadFile):
         return None
     if not uploaded_file.filename:
