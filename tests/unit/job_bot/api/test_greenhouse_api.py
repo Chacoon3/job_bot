@@ -6,9 +6,9 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from job_bot.api import dependencies, greenhouse_api
+from job_bot.app_def import app
 from job_bot.greenhouse.jobs import GreenhouseJobSyncResult
 from job_bot.greenhouse.models import DiscoveryReport, DiscoveryStats
-from job_bot.main import app
 
 
 class DummySession:

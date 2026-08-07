@@ -69,8 +69,11 @@ attempt becomes retryable (default: 3600 seconds).
 ## Run locally
 
 ```bash
-uvicorn job_bot.main:app --host 0.0.0.0 --port 8080
+python -m job_bot.main
 ```
+
+On Windows, use this entry point rather than invoking `uvicorn` directly. It
+selects the event loop required by psycopg's asynchronous PostgreSQL driver.
 
 ## OpenTelemetry
 

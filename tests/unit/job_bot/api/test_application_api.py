@@ -4,8 +4,8 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from job_bot.api import dependencies, job_api
+from job_bot.app_def import app
 from job_bot.data.schemas import User
-from job_bot.main import app
 from job_bot.transaction.applications import ApplicationRunResult
 
 

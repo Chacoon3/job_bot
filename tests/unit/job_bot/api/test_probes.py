@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from job_bot.api import dependencies, probes
-from job_bot.main import app
+from job_bot.app_def import app
 
 
 def test_health_reports_component_statuses(monkeypatch) -> None:

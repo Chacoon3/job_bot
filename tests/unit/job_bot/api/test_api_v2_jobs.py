@@ -6,8 +6,8 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from job_bot.api import dependencies, job_api
+from job_bot.app_def import app
 from job_bot.db.job_models import Job
-from job_bot.main import app
 
 
 class DummySession:

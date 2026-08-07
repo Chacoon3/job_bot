@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 
 from job_bot.api import dependencies
 from job_bot.api import user_api as user
+from job_bot.app_def import app
 from job_bot.data.schemas import User
-from job_bot.main import app
 
 
 class DummySession:

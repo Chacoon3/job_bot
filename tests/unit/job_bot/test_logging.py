@@ -6,7 +6,7 @@ import logging
 import structlog
 from opentelemetry.sdk.trace import TracerProvider
 
-from job_bot.logging import configure_logging
+from job_bot.app_logging import configure_logging
 
 
 def test_configure_logging_uses_json_outside_local_environment(monkeypatch, capsys) -> None:

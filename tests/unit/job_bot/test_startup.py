@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from unittest.mock import Mock
+
+import job_bot.app_def
 
 
 def test_main_import_defers_optional_runtime_dependencies() -> None:
@@ -39,3 +42,25 @@ os._exit(0)
     )
 
     assert result.stdout.strip() == ""
+
+
+def test_main_uses_selector_event_loop_for_async_psycopg_on_windows(monkeypatch) -> None:
+    policy = object()
+    policy_factory = Mock(return_value=policy)
+    set_policy = Mock()
+    run_server = Mock()
+    monkeypatch.setattr(job_bot.app_def.sys, "platform", "win32")
+    monkeypatch.setattr(
+        job_bot.app_def.asyncio,
+        "WindowsSelectorEventLoopPolicy",
+        policy_factory,
+        raising=False,
+    )
+    monkeypatch.setattr(job_bot.app_def.asyncio, "set_event_loop_policy", set_policy)
+    monkeypatch.setattr(job_bot.app_def.uvicorn, "run", run_server)
+
+    job_bot.app_def.main()
+
+    policy_factory.assert_called_once_with()
+    set_policy.assert_called_once_with(policy)
+    run_server.assert_called_once()
