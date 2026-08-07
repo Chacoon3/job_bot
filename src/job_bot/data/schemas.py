@@ -1,14 +1,30 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from job_bot.countries import regulate_country, regulate_phone_country_code
+from job_bot.data.data_policy import ExposurePolicy, Sensitive, StoragePolicy
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import Job
+
+# Profile fields must be available to the application-filling LLM, but should
+# not be emitted verbatim in operational logs.  More sensitive profile details
+# (address, demographics, and document content) are redacted from logs.
+_CONTACT_DATA = Sensitive(
+    storage=StoragePolicy.ENCRYPT,
+    logging=ExposurePolicy.MASK,
+    llm=ExposurePolicy.PLAIN,
+)
+_PRIVATE_PROFILE_DATA = Sensitive(
+    storage=StoragePolicy.ENCRYPT,
+    llm=ExposurePolicy.PLAIN,
+)
+_PRIVATE_DOCUMENT_DATA = Sensitive(storage=StoragePolicy.ENCRYPT)
+_FORM_VALUE_DATA = Sensitive(storage=StoragePolicy.ENCRYPT)
 
 
 class JobEntrySchema(BaseModel):
@@ -106,12 +122,12 @@ class ApplicationStatus(BaseModel):
 
 
 class EducationDegree(BaseModel):
-    degree: str
-    field_of_study: str
-    institution: str
-    duration_minimum: int
-    duration_maximum: int
-    gpa: float
+    degree: Annotated[str, _PRIVATE_PROFILE_DATA]
+    field_of_study: Annotated[str, _PRIVATE_PROFILE_DATA]
+    institution: Annotated[str, _PRIVATE_PROFILE_DATA]
+    duration_minimum: Annotated[int, _PRIVATE_PROFILE_DATA]
+    duration_maximum: Annotated[int, _PRIVATE_PROFILE_DATA]
+    gpa: Annotated[float, _PRIVATE_PROFILE_DATA]
 
 
 JobFormFieldKey = Literal[
@@ -186,22 +202,22 @@ RaceEthnicityOption = Literal[
 class User(BaseModel):
     """All application and identity information owned by a user."""
 
-    first_name: str
-    last_name: str
-    email: EmailStr
-    phone_country: str = Field(min_length=1, max_length=255)
-    phone: str
-    address_line_1: str | None = None
-    address_line_2: str | None = None
-    city: str | None = None
-    state: str | None = None
-    postal_code: str | None = None
-    country: str | None = Field(default=None, max_length=255)
+    first_name: Annotated[str, _CONTACT_DATA]
+    last_name: Annotated[str, _CONTACT_DATA]
+    email: Annotated[EmailStr, _CONTACT_DATA]
+    phone_country: Annotated[str, _CONTACT_DATA] = Field(min_length=1, max_length=255)
+    phone: Annotated[str, _CONTACT_DATA]
+    address_line_1: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
+    address_line_2: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
+    city: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
+    state: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
+    postal_code: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
+    country: Annotated[str | None, _PRIVATE_PROFILE_DATA] = Field(default=None, max_length=255)
 
-    linkedin_url: str | None = None
-    github_url: str | None = None
-    portfolio_url: str | None = None
-    website_url: str | None = None
+    linkedin_url: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
+    github_url: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
+    portfolio_url: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
+    website_url: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
 
     @field_validator("email", mode="after")
     @classmethod
@@ -229,20 +245,20 @@ class User(BaseModel):
             raise ValueError("country must identify a country")
         return canonical
 
-    authorized_to_work: YesNoOption = "yes"
-    requires_sponsorship: YesNoOption = "yes"
-    visa_status: str | None = None
+    authorized_to_work: Annotated[YesNoOption, _PRIVATE_PROFILE_DATA] = "yes"
+    requires_sponsorship: Annotated[YesNoOption, _PRIVATE_PROFILE_DATA] = "yes"
+    visa_status: Annotated[str | None, _PRIVATE_PROFILE_DATA] = None
 
-    willing_to_relocate: YesNoOption = "yes"
-    gender: GenderOption | None = None
-    is_hispanic_or_latino: YesNoOption = "no"
-    race: RaceEthnicityOption = "asian"
-    disability_status: DisabilityStatusOption = "no"
-    veteran_status: VeteranStatusOption = "no"
+    willing_to_relocate: Annotated[YesNoOption, _PRIVATE_PROFILE_DATA] = "yes"
+    gender: Annotated[GenderOption | None, _PRIVATE_PROFILE_DATA] = None
+    is_hispanic_or_latino: Annotated[YesNoOption, _PRIVATE_PROFILE_DATA] = "no"
+    race: Annotated[RaceEthnicityOption, _PRIVATE_PROFILE_DATA] = "asian"
+    disability_status: Annotated[DisabilityStatusOption, _PRIVATE_PROFILE_DATA] = "no"
+    veteran_status: Annotated[VeteranStatusOption, _PRIVATE_PROFILE_DATA] = "no"
 
-    education: list[EducationDegree]
-    resume_text: str
-    summary: str
+    education: Annotated[list[EducationDegree], _PRIVATE_PROFILE_DATA]
+    resume_text: Annotated[str, _PRIVATE_DOCUMENT_DATA]
+    summary: Annotated[str, _PRIVATE_PROFILE_DATA]
 
     def to_prompt_text(self) -> str:
         """Convert the user to prompt text for LLMs."""
@@ -309,8 +325,8 @@ class FormOption(BaseModel):
 class InspectedFile(BaseModel):
     """Content and metadata read from a browser file input."""
 
-    filename: str
-    content: bytes = Field(repr=False)
+    filename: Annotated[str, _PRIVATE_DOCUMENT_DATA]
+    content: Annotated[bytes, _PRIVATE_DOCUMENT_DATA] = Field(repr=False)
     mime_type: str
     size: int = Field(ge=0)
 
@@ -337,7 +353,7 @@ class FormField(BaseModel):
     placeholder: str | None = None
 
     # 控件数据
-    current_value: str | bool | list[str] | None = None
+    current_value: Annotated[str | bool | list[str] | None, _FORM_VALUE_DATA] = None
     uploaded_file: InspectedFile | None = None
     options: list[FormOption] = Field(default_factory=list)
 
@@ -411,8 +427,8 @@ class UploadableFile(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    filename: str = Field(min_length=1)
-    content: bytes = Field(min_length=1, repr=False)
+    filename: Annotated[str, _PRIVATE_DOCUMENT_DATA] = Field(min_length=1)
+    content: Annotated[bytes, _PRIVATE_DOCUMENT_DATA] = Field(min_length=1, repr=False)
     mime_type: str = Field(default="application/octet-stream", min_length=1)
 
 
@@ -427,7 +443,7 @@ class PageInspection(BaseModel):
 
 class FormSuggestion(BaseModel):
     field_key: JobFormFieldKey
-    value: str | bool | None = None
+    value: Annotated[str | bool | None, _FORM_VALUE_DATA] = None
 
 
 class InferredFormAnswers(BaseModel):
@@ -440,7 +456,9 @@ class FormAnswer(BaseModel):
     """
 
     field_accessible_name: str = Field(..., description="The name of the form field.")
-    answer: str = Field(..., description="The inferred answer for the form field.")
+    answer: Annotated[str, _FORM_VALUE_DATA] = Field(
+        ..., description="The inferred answer for the form field."
+    )
 
 
 class AgentInferredFormAnswer(BaseModel):

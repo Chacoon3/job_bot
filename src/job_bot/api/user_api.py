@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
 from job_bot.config import settings
+from job_bot.data.data_policy import ExposurePolicy, Sensitive, StoragePolicy
 from job_bot.data.schemas import (
     DisabilityStatusOption,
     GenderOption,
@@ -44,26 +45,42 @@ USER_EXTRACTION_INSTRUCTIONS = (
     "required text fields."
 )
 
+_PRIVATE_SUPPLEMENT_DATA = Sensitive(
+    storage=StoragePolicy.ENCRYPT,
+    logging=ExposurePolicy.REDACT,
+    llm=ExposurePolicy.PLAIN,
+)
+
 
 class UserSupplement(BaseModel):
     """Answers that generally cannot be safely inferred from a resume."""
 
-    phone_country: str | None = Field(default=None, min_length=1, max_length=255)
-    address_line_1: str | None = Field(default=None, max_length=512)
-    address_line_2: str | None = Field(default=None, max_length=512)
-    city: str | None = Field(default=None, max_length=255)
-    state: str | None = Field(default=None, max_length=255)
-    postal_code: str | None = Field(default=None, max_length=32)
-    country: str | None = Field(default=None, max_length=255)
-    authorized_to_work: YesNoOption
-    requires_sponsorship: YesNoOption
-    willing_to_relocate: YesNoOption
-    visa_status: str | None = Field(default=None, max_length=128)
-    gender: GenderOption = "decline"
-    is_hispanic_or_latino: YesNoOption = "decline"
-    race: RaceEthnicityOption = "decline"
-    disability_status: DisabilityStatusOption = "decline"
-    veteran_status: VeteranStatusOption = "decline"
+    phone_country: Annotated[str | None, _PRIVATE_SUPPLEMENT_DATA] = Field(
+        default=None, min_length=1, max_length=255
+    )
+    address_line_1: Annotated[str | None, _PRIVATE_SUPPLEMENT_DATA] = Field(
+        default=None, max_length=512
+    )
+    address_line_2: Annotated[str | None, _PRIVATE_SUPPLEMENT_DATA] = Field(
+        default=None, max_length=512
+    )
+    city: Annotated[str | None, _PRIVATE_SUPPLEMENT_DATA] = Field(default=None, max_length=255)
+    state: Annotated[str | None, _PRIVATE_SUPPLEMENT_DATA] = Field(default=None, max_length=255)
+    postal_code: Annotated[str | None, _PRIVATE_SUPPLEMENT_DATA] = Field(
+        default=None, max_length=32
+    )
+    country: Annotated[str | None, _PRIVATE_SUPPLEMENT_DATA] = Field(default=None, max_length=255)
+    authorized_to_work: Annotated[YesNoOption, _PRIVATE_SUPPLEMENT_DATA]
+    requires_sponsorship: Annotated[YesNoOption, _PRIVATE_SUPPLEMENT_DATA]
+    willing_to_relocate: Annotated[YesNoOption, _PRIVATE_SUPPLEMENT_DATA]
+    visa_status: Annotated[str | None, _PRIVATE_SUPPLEMENT_DATA] = Field(
+        default=None, max_length=128
+    )
+    gender: Annotated[GenderOption, _PRIVATE_SUPPLEMENT_DATA] = "decline"
+    is_hispanic_or_latino: Annotated[YesNoOption, _PRIVATE_SUPPLEMENT_DATA] = "decline"
+    race: Annotated[RaceEthnicityOption, _PRIVATE_SUPPLEMENT_DATA] = "decline"
+    disability_status: Annotated[DisabilityStatusOption, _PRIVATE_SUPPLEMENT_DATA] = "decline"
+    veteran_status: Annotated[VeteranStatusOption, _PRIVATE_SUPPLEMENT_DATA] = "decline"
 
 
 def _merge_resume_user_with_supplement(
@@ -189,7 +206,7 @@ async def _extract_user(
         parsed = response.output_parsed
         if not isinstance(parsed, User):
             raise RuntimeError(
-                "The LLM did not return a parsed User " f"(received {type(parsed).__name__})."
+                f"The LLM did not return a parsed User (received {type(parsed).__name__})."
             )
 
         return _merge_resume_user_with_supplement(parsed, user_supplement)

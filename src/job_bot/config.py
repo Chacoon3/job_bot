@@ -1,7 +1,12 @@
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from job_bot.data.data_policy import Sensitive, StoragePolicy
+
+_CREDENTIAL = Sensitive(storage=StoragePolicy.ENCRYPT)
 
 
 class Settings(BaseSettings):
@@ -11,23 +16,23 @@ class Settings(BaseSettings):
     BROWSER_AUTOMATION_ENABLED: bool = True
 
     # Database
-    DATABASE_URL: str | None = None
+    DATABASE_URL: Annotated[str | None, _CREDENTIAL] = None
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
     DB_POOL_TIMEOUT_SECONDS: int = 30
     DB_POOL_RECYCLE_SECONDS: int = 1800
 
     # LLM / API credentials
-    OPENAI_API_KEY: SecretStr | None = None
-    GOOGLE_API_KEY: SecretStr | None = None
-    ANTHROPIC_API_KEY: SecretStr | None = None
-    HUGGINGFACEHUB_API_TOKEN: SecretStr | None = None
-    TAVILY_API_KEY: SecretStr | None = None
+    OPENAI_API_KEY: Annotated[SecretStr | None, _CREDENTIAL] = None
+    GOOGLE_API_KEY: Annotated[SecretStr | None, _CREDENTIAL] = None
+    ANTHROPIC_API_KEY: Annotated[SecretStr | None, _CREDENTIAL] = None
+    HUGGINGFACEHUB_API_TOKEN: Annotated[SecretStr | None, _CREDENTIAL] = None
+    TAVILY_API_KEY: Annotated[SecretStr | None, _CREDENTIAL] = None
     JOB_BOT_LLM_MODEL: str = "gpt-5.6-luna"
     OLLAMA_BASE_URL: str | None = None
 
     # Cache
-    REDIS_URL: str | None = None
+    REDIS_URL: Annotated[str | None, _CREDENTIAL] = None
     REDIS_CACHE_PREFIX: str = "job_bot:cache"
     REDIS_SOCKET_TIMEOUT_SECONDS: float = 1.0
     APP_CACHE_TTL_SECONDS: float | None = None

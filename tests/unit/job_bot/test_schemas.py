@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
+from job_bot.data.data_policy import ExposurePolicy, Sensitive, StoragePolicy
 from job_bot.data.schemas import GreenhouseBoardSchema, JobEntrySchema, User
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.db.job_models import Job
@@ -100,6 +101,18 @@ def test_user_validates_and_normalizes_email() -> None:
     )
 
     assert profile.email == "alex.doe@example.com"
+
+
+def test_user_sensitive_fields_include_storage_and_exposure_policies() -> None:
+    email_policy = User.model_fields["email"].metadata[0]
+    resume_policy = User.model_fields["resume_text"].metadata[0]
+
+    assert email_policy == Sensitive(
+        storage=StoragePolicy.ENCRYPT,
+        logging=ExposurePolicy.MASK,
+        llm=ExposurePolicy.PLAIN,
+    )
+    assert resume_policy == Sensitive(storage=StoragePolicy.ENCRYPT)
 
 
 @pytest.mark.parametrize(
