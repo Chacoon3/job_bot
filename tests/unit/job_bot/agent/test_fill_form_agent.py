@@ -101,13 +101,21 @@ def test_agent_answer_is_reused_from_cache(monkeypatch) -> None:
     calls = 0
     expected = [FormAnswer(field_accessible_name="First name", answer="Alex")]
 
+    class _StructuredOutput:
+        def __init__(self, answers):
+            self.answers = answers
+
     class FakeAgent:
         async def ainvoke(self, _state, *, context):
             nonlocal calls
             calls += 1
-            return {"answers": expected}
+            return {"structured_output": _StructuredOutput(expected)}
 
-    monkeypatch.setattr(fill_form_agent, "_get_answer_agent", lambda: FakeAgent())
+    monkeypatch.setattr(
+        fill_form_agent,
+        "get_react_agent_with_structured_output",
+        lambda: FakeAgent(),
+    )
     monkeypatch.setattr(fill_form_agent, "_Runtime", lambda **kwargs: kwargs)
     uncached = fill_form_agent.agent_infer_interactive_element_answer.__wrapped__
     cached = RedisCache(client=FakeRedis()).cached(
