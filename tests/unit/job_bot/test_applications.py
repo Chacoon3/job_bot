@@ -8,15 +8,15 @@ from uuid import uuid4
 
 import pytest
 
-from job_bot import applications
-from job_bot.applications import (
+from job_bot.db.application_models import JobApplicationAttempt
+from job_bot.transaction import applications
+from job_bot.transaction.applications import (
     canonical_job_url,
     complete_application_attempt,
     job_identity_key,
     reserve_application_attempt,
     run_application_once,
 )
-from job_bot.db.application_models import JobApplicationAttempt
 
 
 def test_canonical_job_url_removes_only_tracking_data() -> None:

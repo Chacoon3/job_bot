@@ -24,7 +24,7 @@ from job_bot.data.schemas import (
 )
 from job_bot.db.user_models import User as ORMUser
 from job_bot.openai_client import get_async_openai_client
-from job_bot.users import delete_user, get_user, upsert_user, user_from_record
+from job_bot.transaction.users import delete_user, get_user, upsert_user, user_from_record
 from job_bot.utils.caching import AppDiskCache
 from job_bot.utils.hash_helper import model_schema_key
 

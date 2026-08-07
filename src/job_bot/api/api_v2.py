@@ -11,12 +11,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session, require_browser_automation
-from job_bot.applications import run_application_once
 from job_bot.data.schemas import ApplicationFileSet, JobEntrySchema
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.greenhouse.jobs import GreenhouseJobSyncService
 from job_bot.greenhouse.repository import list_boards
-from job_bot.users import canonical_email, get_user, user_from_record
+from job_bot.transaction.applications import run_application_once
+from job_bot.transaction.users import canonical_email, get_user, user_from_record
 from job_bot.utils.file_tools import extract_uploadable_file
 
 router = APIRouter(prefix="/apiv2/job", tags=["job_bot"])
