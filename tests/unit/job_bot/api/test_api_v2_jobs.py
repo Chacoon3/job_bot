@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from job_bot.api import api_v2, dependencies
+from job_bot.api import dependencies, job_api
 from job_bot.db.job_models import Job
 from job_bot.main import app
 
@@ -59,8 +59,8 @@ def test_get_company_jobs_fetches_named_boards_filters_and_sorts(monkeypatch) ->
             ]
 
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(api_v2, "list_boards", fake_list_boards)
-    monkeypatch.setattr(api_v2, "GreenhouseJobSyncService", FakeService)
+    monkeypatch.setattr(job_api, "list_boards", fake_list_boards)
+    monkeypatch.setattr(job_api, "GreenhouseJobSyncService", FakeService)
     try:
         response = TestClient(app).get(
             "/apiv2/job/",
@@ -88,7 +88,7 @@ def test_get_company_jobs_uses_three_random_boards_without_company_names(monkeyp
             return [_job(token, now)]
 
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(api_v2, "GreenhouseJobSyncService", FakeService)
+    monkeypatch.setattr(job_api, "GreenhouseJobSyncService", FakeService)
     try:
         response = TestClient(app).get("/apiv2/job/", params={"posted_after": "2026-01-01"})
     finally:
@@ -117,8 +117,8 @@ def test_get_company_jobs_falls_back_to_company_slug_when_board_is_missing(monke
             return []
 
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(api_v2, "list_boards", fake_list_boards)
-    monkeypatch.setattr(api_v2, "GreenhouseJobSyncService", FakeService)
+    monkeypatch.setattr(job_api, "list_boards", fake_list_boards)
+    monkeypatch.setattr(job_api, "GreenhouseJobSyncService", FakeService)
     try:
         response = TestClient(app).get(
             "/apiv2/job/",

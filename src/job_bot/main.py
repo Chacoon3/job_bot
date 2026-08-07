@@ -5,8 +5,8 @@ import uvicorn
 from fastapi import FastAPI
 
 from job_bot.api.api_v1 import router
-from job_bot.api.api_v2 import router as routerv2
 from job_bot.api.greenhouse_api import router as greenhouse_router
+from job_bot.api.job_api import router as routerv2
 from job_bot.api.user_api import router as user_router
 from job_bot.config import settings
 from job_bot.logging import configure_logging

@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from job_bot.api import api_v2, dependencies
+from job_bot.api import dependencies, job_api
 from job_bot.data.schemas import User
 from job_bot.main import app
 from job_bot.transaction.applications import ApplicationRunResult
@@ -37,11 +37,11 @@ def test_apply_returns_prior_success_without_running_browser(monkeypatch) -> Non
         calls.update(session=received_session, **kwargs)
         return ApplicationRunResult(attempt, False, "already_succeeded")
 
-    monkeypatch.setattr(api_v2, "get_user", lambda *_args: SimpleNamespace(id=user_id))
-    monkeypatch.setattr(api_v2, "user_from_record", lambda _record: _user())
-    monkeypatch.setattr(api_v2, "run_application_once", fake_run)
+    monkeypatch.setattr(job_api, "get_user", lambda *_args: SimpleNamespace(id=user_id))
+    monkeypatch.setattr(job_api, "user_from_record", lambda _record: _user())
+    monkeypatch.setattr(job_api, "run_application_once", fake_run)
     monkeypatch.setattr(
-        api_v2,
+        job_api,
         "async_playwright",
         lambda: (_ for _ in ()).throw(AssertionError("browser must not start")),
     )
@@ -83,9 +83,9 @@ def test_apply_reports_an_attempt_already_in_progress(monkeypatch) -> None:
     async def fake_run(*_args, **_kwargs):
         return ApplicationRunResult(attempt, False, "in_progress")
 
-    monkeypatch.setattr(api_v2, "get_user", lambda *_args: SimpleNamespace(id=uuid4()))
-    monkeypatch.setattr(api_v2, "user_from_record", lambda _record: _user())
-    monkeypatch.setattr(api_v2, "run_application_once", fake_run)
+    monkeypatch.setattr(job_api, "get_user", lambda *_args: SimpleNamespace(id=uuid4()))
+    monkeypatch.setattr(job_api, "user_from_record", lambda _record: _user())
+    monkeypatch.setattr(job_api, "run_application_once", fake_run)
     app.dependency_overrides[dependencies.get_session] = lambda: session
     app.dependency_overrides[dependencies.require_browser_automation] = lambda: None
     try:
