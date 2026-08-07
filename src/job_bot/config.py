@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     AGENT_MAX_RETRIES: int = 3
     AGENT_MAX_FAILURES: int = 5
     AGENT_MAX_ACTIONS: int = 20
+    APPLICATION_ATTEMPT_LEASE_SECONDS: int = 1800
 
     model_config = SettingsConfigDict(
         env_file=".env",

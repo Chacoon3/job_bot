@@ -59,6 +59,13 @@ The connection pool validates connections before checkout, permits up to
 `DB_POOL_SIZE + DB_MAX_OVERFLOW` concurrent connections, and recycles
 long-lived PostgreSQL connections.
 
+Job application executions are recorded in `job_application_attempts`. The
+combination of user ID and a hash of the canonical job URL is the idempotency
+identity: an in-progress or successful row prevents another concurrent
+application, while failed attempts remain as history and may be retried. Set
+`APPLICATION_ATTEMPT_LEASE_SECONDS` to control when an abandoned in-progress
+attempt becomes retryable (default: 3600 seconds).
+
 ## Run locally
 
 ```bash
