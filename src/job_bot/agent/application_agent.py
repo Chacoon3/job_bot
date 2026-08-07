@@ -156,6 +156,7 @@ async def agent_infer_application_status(
                 content=(
                     "You are a browser automation assistant."
                     "Your task is to inspect the webpage and determine whether the application was successful or failed."
+                    "Return the status as one of 'success', 'failure', or 'unknown'."
                 )
             ),
         ],
