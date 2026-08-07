@@ -6,11 +6,17 @@ from unittest.mock import Mock
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.schema import CreateTable
+from sqlalchemy.sql import Select
 
 from job_bot.db.database import create_database_engine
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.greenhouse.models import DiscoveredBoard
-from job_bot.greenhouse.repository import upsert_boards
+from job_bot.greenhouse.repository import (
+    COMPANY_NAME_SIMILARITY_THRESHOLD,
+    _build_company_name_filter,
+    list_boards,
+    upsert_boards,
+)
 
 
 def _board(token: str) -> DiscoveredBoard:
@@ -90,3 +96,57 @@ def test_upsert_boards_rejects_invalid_batch_size() -> None:
         raise AssertionError("Expected invalid batch size to raise ValueError")
 
     session.execute.assert_not_called()
+
+
+def test_company_name_filter_uses_trigram_fuzzy_matching() -> None:
+    clause = _build_company_name_filter("  Acne   Corporation ")
+    compiled = str(
+        clause.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+
+    assert "ILIKE '%%Acne Corporation%%'" in compiled
+    assert "similarity(" in compiled
+    assert f">= {COMPANY_NAME_SIMILARITY_THRESHOLD}" in compiled
+    assert "word_similarity(" in compiled
+    assert (
+        "regexp_replace(lower(coalesce(greenhouse_boards.company_name, '')), '\\\\s+', ' ', 'g')"
+        in compiled
+    )
+
+
+def test_list_boards_applies_same_company_name_filter_to_rows_and_count() -> None:
+    session = Mock()
+    rows_result = Mock()
+    rows_scalars = Mock()
+    rows_scalars.all.return_value = []
+    rows_result.scalars.return_value = rows_scalars
+    count_result = Mock()
+    count_scalars = Mock()
+    count_scalars.all.return_value = []
+    count_result.scalars.return_value = count_scalars
+    session.execute.side_effect = [rows_result, count_result]
+
+    list_boards(session, company_name="Acne")
+
+    assert session.execute.call_count == 2
+
+    row_statement = session.execute.call_args_list[0].args[0]
+    count_statement = session.execute.call_args_list[1].args[0]
+    assert isinstance(row_statement, Select)
+    assert isinstance(count_statement, Select)
+
+    row_sql = str(
+        row_statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    count_sql = str(
+        count_statement.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+
+    assert "ILIKE '%%Acne%%'" in row_sql
+    assert "similarity(" in row_sql
+    assert "word_similarity(" in row_sql
+    assert "ILIKE '%%Acne%%'" in count_sql
+    assert "similarity(" in count_sql
+    assert "word_similarity(" in count_sql

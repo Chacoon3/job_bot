@@ -5,14 +5,16 @@ from datetime import datetime
 from itertools import islice
 from typing import TypeVar
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
 from job_bot.greenhouse.models import DiscoveredBoard
 
 DEFAULT_UPSERT_BATCH_SIZE = 1_000
+COMPANY_NAME_SIMILARITY_THRESHOLD = 0.35
 
 T = TypeVar("T")
 
@@ -22,6 +24,29 @@ def batched(items: Iterable[T], size: int) -> Iterator[list[T]]:
 
     while batch := list(islice(iterator, size)):
         yield batch
+
+
+def _normalize_company_name_filter(value: str) -> str:
+    return " ".join(value.split())
+
+
+def _build_company_name_filter(company_name: str) -> ColumnElement[bool]:
+    normalized_company_name = _normalize_company_name_filter(company_name)
+    substring_pattern = f"%{normalized_company_name}%"
+    normalized_column = func.regexp_replace(
+        func.lower(func.coalesce(GreenhouseBoard.company_name, "")),
+        r"\s+",
+        " ",
+        "g",
+    )
+    normalized_query = normalized_company_name.casefold()
+
+    return or_(
+        GreenhouseBoard.company_name.ilike(substring_pattern),
+        func.similarity(normalized_column, normalized_query) >= COMPANY_NAME_SIMILARITY_THRESHOLD,
+        func.word_similarity(normalized_query, normalized_column)
+        >= COMPANY_NAME_SIMILARITY_THRESHOLD,
+    )
 
 
 def upsert_boards(
@@ -116,10 +141,9 @@ def list_boards(
         count_statement = count_statement.where(GreenhouseBoard.token.ilike(f"%{token}%"))
 
     if company_name:
-        statement = statement.where(GreenhouseBoard.company_name.ilike(f"%{company_name}%"))
-        count_statement = count_statement.where(
-            GreenhouseBoard.company_name.ilike(f"%{company_name}%")
-        )
+        company_name_filter = _build_company_name_filter(company_name)
+        statement = statement.where(company_name_filter)
+        count_statement = count_statement.where(company_name_filter)
 
     if crawl_index:
         statement = statement.where(GreenhouseBoard.crawl_indexes.contains([crawl_index]))

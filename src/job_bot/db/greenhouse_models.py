@@ -22,6 +22,12 @@ class GreenhouseBoard(Base):
     __tablename__ = "greenhouse_boards"
     __table_args__ = (
         Index("idx_greenhouse_boards_company_name", "company_name"),
+        Index(
+            "idx_greenhouse_boards_company_name_trgm",
+            "company_name",
+            postgresql_using="gin",
+            postgresql_ops={"company_name": "gin_trgm_ops"},
+        ),
         Index("idx_greenhouse_boards_active_jobs", "active_job_count"),
         Index("idx_greenhouse_boards_verified_at", "verified_at"),
     )
