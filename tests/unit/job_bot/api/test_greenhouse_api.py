@@ -17,7 +17,7 @@ class DummySession:
     def close(self) -> None:
         return
 
-    def commit(self) -> None:
+    async def commit(self) -> None:
         self.committed = True
 
 
@@ -40,7 +40,7 @@ def _sample_board() -> SimpleNamespace:
 
 
 def test_get_boards_returns_paginated_payload(monkeypatch) -> None:
-    def fake_list_boards(*args, **kwargs):
+    async def fake_list_boards(*args, **kwargs):
         return [_sample_board()], 1
 
     app.dependency_overrides[dependencies.get_session] = lambda: iter([DummySession()])
@@ -63,7 +63,7 @@ def test_get_boards_returns_paginated_payload(monkeypatch) -> None:
 def test_get_boards_passes_filters(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_list_boards(*args, **kwargs):
+    async def fake_list_boards(*args, **kwargs):
         captured.update(kwargs)
         return [], 0
 
@@ -114,7 +114,7 @@ def test_discover_boards_runs_discovery_and_persists_results(monkeypatch) -> Non
         async def discover(self) -> DiscoveryReport:
             return report
 
-    def fake_upsert_boards(received_session, boards) -> int:
+    async def fake_upsert_boards(received_session, boards) -> int:
         captured["session"] = received_session
         captured["boards"] = boards
         return len(boards)
@@ -180,7 +180,11 @@ def test_discover_boards_by_company_uses_llm_provider(monkeypatch) -> None:
         "GreenhouseCompanyDiscoverer",
         FakeCompanyDiscoverer,
     )
-    monkeypatch.setattr(greenhouse_api, "upsert_boards", lambda *_args: 0)
+
+    async def fake_upsert_boards(*_args) -> int:
+        return 0
+
+    monkeypatch.setattr(greenhouse_api, "upsert_boards", fake_upsert_boards)
 
     client = TestClient(app)
     response = client.post(
@@ -224,7 +228,7 @@ def test_sync_greenhouse_jobs_fetches_persists_and_commits(monkeypatch) -> None:
         def __init__(self, received_session) -> None:
             captured["session"] = received_session
 
-        def sync(self, **kwargs) -> GreenhouseJobSyncResult:
+        async def sync(self, **kwargs) -> GreenhouseJobSyncResult:
             captured.update(kwargs)
             return GreenhouseJobSyncResult(
                 boards_queried=4,

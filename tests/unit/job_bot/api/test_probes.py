@@ -9,10 +9,14 @@ from job_bot.main import app
 def test_health_reports_component_statuses(monkeypatch) -> None:
     session = SimpleNamespace()
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(probes, "_check_database", lambda received_session: {"status": "healthy"})
+
+    async def healthy_database(received_session):
+        return {"status": "healthy"}
+
+    monkeypatch.setattr(probes, "_check_database", healthy_database)
     monkeypatch.setattr(probes, "_check_redis", lambda: {"status": "healthy"})
     try:
-        response = TestClient(app).get("/api/health")
+        response = TestClient(app).get("/api/health/ready")
     finally:
         app.dependency_overrides.clear()
 
@@ -29,14 +33,18 @@ def test_health_reports_component_statuses(monkeypatch) -> None:
 def test_health_returns_503_when_a_component_is_unhealthy(monkeypatch) -> None:
     session = SimpleNamespace()
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(probes, "_check_database", lambda received_session: {"status": "healthy"})
+
+    async def healthy_database(received_session):
+        return {"status": "healthy"}
+
+    monkeypatch.setattr(probes, "_check_database", healthy_database)
     monkeypatch.setattr(
         probes,
         "_check_redis",
         lambda: {"status": "unhealthy", "detail": "redis check failed: timeout"},
     )
     try:
-        response = TestClient(app).get("/api/health")
+        response = TestClient(app).get("/api/health/ready")
     finally:
         app.dependency_overrides.clear()
 

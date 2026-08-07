@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
 from job_bot.api.dependencies import get_session
@@ -48,9 +48,9 @@ def _disabled(detail: str) -> ComponentHealth:
     }
 
 
-def _check_database(session: Session) -> ComponentHealth:
+async def _check_database(session: AsyncSession) -> ComponentHealth:
     try:
-        session.execute(text("SELECT 1"))
+        await session.execute(text("SELECT 1"))
     except SQLAlchemyError as exc:
         get_logger().exception(
             "Database health check failed.",
@@ -99,8 +99,8 @@ def liveness() -> dict[str, str]:
 
 
 @router.get("/health/ready")
-def readiness(
-    session: Annotated[Session, Depends(get_session)],
+async def readiness(
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> JSONResponse:
     """
     Report whether the application is ready to serve traffic.
@@ -109,7 +109,7 @@ def readiness(
     Disabled optional dependencies do not make the service unhealthy.
     """
     components: dict[str, ComponentHealth] = {
-        "db": _check_database(session),
+        "db": await _check_database(session),
         "redis": _check_redis(),
     }
 

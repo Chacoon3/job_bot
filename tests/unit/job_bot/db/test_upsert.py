@@ -1,4 +1,5 @@
-from unittest.mock import Mock
+import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -15,15 +16,17 @@ def _row(index: int) -> dict[str, object]:
 
 
 def test_batched_upsert_executes_batches_and_returns_row_count() -> None:
-    session = Mock()
+    session = AsyncMock()
 
-    rows_processed = batched_upsert(
-        session,
-        Job,
-        (_row(index) for index in range(5)),
-        conflict_columns=[Job.url],
-        update_columns=[Job.source, Job.job_title],
-        batch_size=2,
+    rows_processed = asyncio.run(
+        batched_upsert(
+            session,
+            Job,
+            (_row(index) for index in range(5)),
+            conflict_columns=[Job.url],
+            update_columns=[Job.source, Job.job_title],
+            batch_size=2,
+        )
     )
 
     assert rows_processed == 5
@@ -33,45 +36,51 @@ def test_batched_upsert_executes_batches_and_returns_row_count() -> None:
 
 
 def test_batched_upsert_obeys_bind_parameter_limit() -> None:
-    session = Mock()
+    session = AsyncMock()
 
-    batched_upsert(
-        session,
-        Job,
-        [_row(1), _row(2)],
-        conflict_columns=["url"],
-        update_columns=["job_title"],
-        batch_size=10,
-        max_bind_parameters=3,
+    asyncio.run(
+        batched_upsert(
+            session,
+            Job,
+            [_row(1), _row(2)],
+            conflict_columns=["url"],
+            update_columns=["job_title"],
+            batch_size=10,
+            max_bind_parameters=3,
+        )
     )
 
     assert session.execute.call_count == 2
 
 
 def test_batched_upsert_rejects_inconsistent_rows() -> None:
-    session = Mock()
+    session = AsyncMock()
 
     with pytest.raises(ValueError, match="same columns"):
-        batched_upsert(
-            session,
-            Job,
-            [_row(1), {"source": "greenhouse", "url": "https://example.com/jobs/2"}],
-            conflict_columns=["url"],
-            update_columns=["job_title"],
+        asyncio.run(
+            batched_upsert(
+                session,
+                Job,
+                [_row(1), {"source": "greenhouse", "url": "https://example.com/jobs/2"}],
+                conflict_columns=["url"],
+                update_columns=["job_title"],
+            )
         )
 
 
 def test_batched_upsert_caches_resolved_model_metadata() -> None:
-    session = Mock()
+    session = AsyncMock()
     _resolve_upsert_metadata.cache_clear()
 
     for index in range(2):
-        batched_upsert(
-            session,
-            Job,
-            [_row(index)],
-            conflict_columns=[Job.url],
-            update_columns=[Job.job_title],
+        asyncio.run(
+            batched_upsert(
+                session,
+                Job,
+                [_row(index)],
+                conflict_columns=[Job.url],
+                update_columns=[Job.job_title],
+            )
         )
 
     cache_info = _resolve_upsert_metadata.cache_info()

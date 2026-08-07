@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 POSTGRESQL_MAX_BIND_PARAMETERS = 65_535
 DEFAULT_UPSERT_BATCH_SIZE = 5_000
@@ -37,8 +37,8 @@ def _resolve_upsert_metadata(
     return mapped_columns, conflict_names, update_names
 
 
-def batched_upsert(
-    session: Session,
+async def batched_upsert(
+    session: AsyncSession,
     model: type[Any],
     rows: Iterable[Mapping[str, Any]],
     *,
@@ -68,7 +68,7 @@ def batched_upsert(
     pending: list[Mapping[str, Any]] = []
     rows_processed = 0
 
-    def execute_batch() -> None:
+    async def execute_batch() -> None:
         nonlocal rows_processed
         statement = insert(model).values(pending)
         if update_names:
@@ -78,7 +78,7 @@ def batched_upsert(
             )
         else:
             statement = statement.on_conflict_do_nothing(index_elements=list(conflict_names))
-        session.execute(statement)
+        await session.execute(statement)
         rows_processed += len(pending)
         pending.clear()
 
@@ -106,8 +106,8 @@ def batched_upsert(
 
         pending.append(row)
         if len(pending) == current_batch_limit:
-            execute_batch()
+            await execute_batch()
 
     if pending:
-        execute_batch()
+        await execute_batch()
     return rows_processed

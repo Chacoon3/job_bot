@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 from sqlalchemy import func, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_bot.config import settings
 from job_bot.db.application_models import JobApplicationAttempt
@@ -74,8 +74,8 @@ def job_identity_key(job_url: str) -> tuple[str, str]:
     return canonical_url, hashlib.sha256(payload).hexdigest()
 
 
-def _active_attempt(
-    session: Session,
+async def _active_attempt(
+    session: AsyncSession,
     user_id: UUID,
     job_key: str,
 ) -> JobApplicationAttempt | None:
@@ -88,11 +88,11 @@ def _active_attempt(
         )
         .with_for_update()
     )
-    return session.scalars(statement).first()
+    return (await session.scalars(statement)).first()
 
 
-def reserve_application_attempt(
-    session: Session,
+async def reserve_application_attempt(
+    session: AsyncSession,
     *,
     user_id: UUID,
     job_url: str,
@@ -110,12 +110,12 @@ def reserve_application_attempt(
     canonical_url, job_key = job_identity_key(job_url)
     timestamp = now or datetime.now(UTC)
     lock_key = f"{user_id}:{job_key}"
-    session.execute(
+    await session.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
         {"lock_key": lock_key},
     )
 
-    existing = _active_attempt(session, user_id, job_key)
+    existing = await _active_attempt(session, user_id, job_key)
     if existing is not None and existing.status == "succeeded":
         return ApplicationReservation(existing, False, "already_succeeded")
     if existing is not None and existing.lease_expires_at > timestamp:
@@ -125,9 +125,9 @@ def reserve_application_attempt(
         existing.completed_at = timestamp
         existing.error_type = "ApplicationAttemptLeaseExpired"
         existing.error_message = "The previous application attempt lease expired"
-        session.flush()
+        await session.flush()
 
-    attempt_number = session.scalar(
+    attempt_number = await session.scalar(
         select(func.coalesce(func.max(JobApplicationAttempt.attempt_number), 0) + 1).where(
             JobApplicationAttempt.user_id == user_id,
             JobApplicationAttempt.job_key == job_key,
@@ -144,12 +144,12 @@ def reserve_application_attempt(
         lease_expires_at=timestamp + lease,
     )
     session.add(attempt)
-    session.flush()
+    await session.flush()
     return ApplicationReservation(attempt, True, "new_attempt")
 
 
-def complete_application_attempt(
-    session: Session,
+async def complete_application_attempt(
+    session: AsyncSession,
     attempt_id: UUID,
     *,
     status: Literal["succeeded", "failed"],
@@ -157,7 +157,7 @@ def complete_application_attempt(
     result: dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> JobApplicationAttempt:
-    attempt = session.scalar(
+    attempt = await session.scalar(
         select(JobApplicationAttempt)
         .where(JobApplicationAttempt.attempt_id == attempt_id)
         .with_for_update()
@@ -173,12 +173,12 @@ def complete_application_attempt(
     if error is not None:
         attempt.error_type = type(error).__name__[:255]
         attempt.error_message = str(error)[:4000]
-    session.flush()
+    await session.flush()
     return attempt
 
 
 async def run_application_once(
-    session: Session,
+    session: AsyncSession,
     *,
     user_id: UUID,
     job_url: str,
@@ -186,14 +186,14 @@ async def run_application_once(
     job_id: UUID | None = None,
 ) -> ApplicationRunResult:
     """Reserve, execute, and durably complete one idempotent application."""
-    reservation = reserve_application_attempt(
+    reservation = await reserve_application_attempt(
         session,
         user_id=user_id,
         job_url=job_url,
         job_id=job_id,
         lease=timedelta(seconds=settings().APPLICATION_ATTEMPT_LEASE_SECONDS),
     )
-    session.commit()
+    await session.commit()
     if not reservation.should_execute:
         return ApplicationRunResult(reservation.attempt, False, reservation.reason)
 
@@ -201,10 +201,10 @@ async def run_application_once(
     try:
         await operation()
     except Exception as exc:
-        complete_application_attempt(session, attempt_id, status="failed", error=exc)
-        session.commit()
+        await complete_application_attempt(session, attempt_id, status="failed", error=exc)
+        await session.commit()
         raise
 
-    attempt = complete_application_attempt(session, attempt_id, status="succeeded")
-    session.commit()
+    attempt = await complete_application_attempt(session, attempt_id, status="succeeded")
+    await session.commit()
     return ApplicationRunResult(attempt, True, "new_attempt")

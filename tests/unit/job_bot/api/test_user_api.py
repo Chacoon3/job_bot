@@ -19,10 +19,10 @@ class DummySession:
     def __init__(self) -> None:
         self.committed = False
 
-    def commit(self) -> None:
+    async def commit(self) -> None:
         self.committed = True
 
-    def refresh(self, _record: object) -> None:
+    async def refresh(self, _record: object) -> None:
         return
 
 
@@ -146,7 +146,7 @@ def test_get_user_returns_the_current_user(monkeypatch) -> None:
     user_id = uuid4()
     session = DummySession()
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(user, "get_user_by_id", lambda *_args: _record(user_id))
+    monkeypatch.setattr(user, "get_user_by_id", AsyncMock(return_value=_record(user_id)))
 
     response = TestClient(app).get(f"/apiv1/user/{user_id}")
 
@@ -160,7 +160,7 @@ def test_get_user_returns_the_current_user(monkeypatch) -> None:
 
 def test_get_user_returns_not_found(monkeypatch) -> None:
     app.dependency_overrides[dependencies.get_session] = lambda: DummySession()
-    monkeypatch.setattr(user, "get_user_by_id", lambda *_args: None)
+    monkeypatch.setattr(user, "get_user_by_id", AsyncMock(return_value=None))
 
     response = TestClient(app).get(f"/apiv1/user/{uuid4()}")
 
@@ -181,7 +181,7 @@ def test_update_user_replaces_current_data(monkeypatch) -> None:
         }
     )
 
-    def fake_upsert(received_session, **kwargs):
+    async def fake_upsert(received_session, **kwargs):
         captured.update(session=received_session, **kwargs)
         record = _record(user_id)
         for field_name, value in kwargs["user"].model_dump(mode="json").items():
@@ -190,12 +190,12 @@ def test_update_user_replaces_current_data(monkeypatch) -> None:
         return record
 
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(user, "get_user_by_id", lambda *_args: _record(user_id))
+    monkeypatch.setattr(user, "get_user_by_id", AsyncMock(return_value=_record(user_id)))
     monkeypatch.setattr(user, "_extract_user", AsyncMock(return_value=extracted))
     monkeypatch.setattr(
         user,
         "replace_user_record",
-        lambda *_args, **kwargs: fake_upsert(session, **kwargs),
+        fake_upsert,
     )
 
     response = TestClient(app).put(
@@ -213,7 +213,7 @@ def test_update_user_replaces_current_data(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["user"]["requires_sponsorship"] == "no"
     assert captured["user"].email == "alex@example.com"
-    assert "user_id" not in captured
+    assert captured["user_id"] == user_id
     assert len(captured["resume_sha256"]) == 64
     assert session.committed is True
 
@@ -223,7 +223,7 @@ def test_create_user_upserts_by_extracted_email(monkeypatch) -> None:
     session = DummySession()
     captured: dict[str, object] = {}
 
-    def fake_upsert(received_session, **kwargs):
+    async def fake_upsert(received_session, **kwargs):
         captured.update(session=received_session, **kwargs)
         return _record(generated_user_id)
 
@@ -253,7 +253,7 @@ def test_update_user_returns_not_found_when_id_does_not_exist(monkeypatch) -> No
     session = DummySession()
     user_id = uuid4()
     app.dependency_overrides[dependencies.get_session] = lambda: session
-    monkeypatch.setattr(user, "get_user_by_id", lambda *_args: None)
+    monkeypatch.setattr(user, "get_user_by_id", AsyncMock(return_value=None))
 
     response = TestClient(app).put(
         f"/apiv1/user/{user_id}",
@@ -276,7 +276,7 @@ def test_delete_user_permanently_deletes_by_id(monkeypatch) -> None:
     session = DummySession()
     captured: dict[str, object] = {}
 
-    def fake_delete(received_session, received_user_id):
+    async def fake_delete(received_session, received_user_id):
         captured.update(session=received_session, user_id=received_user_id)
         return _record(user_id)
 

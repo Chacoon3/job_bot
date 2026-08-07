@@ -1,5 +1,5 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_bot.data.schemas import JobEntrySchema
 from job_bot.db.job_models import Job
@@ -13,18 +13,20 @@ class GreenHouseJobProvider(JobProvider):
 
     def __init__(
         self,
-        session: Session,
+        session: AsyncSession,
     ) -> None:
         self.session = session
 
-    def provide(self) -> list[JobEntrySchema]:
+    async def provide(self) -> list[JobEntrySchema]:
         jobs = (
-            self.session.execute(
-                select(Job)
-                .where(Job.source == GREENHOUSE_SOURCE)
-                .order_by(
-                    Job.date_posted.desc().nullslast(),
-                    Job.job_id.asc(),
+            (
+                await self.session.execute(
+                    select(Job)
+                    .where(Job.source == GREENHOUSE_SOURCE)
+                    .order_by(
+                        Job.date_posted.desc().nullslast(),
+                        Job.job_id.asc(),
+                    )
                 )
             )
             .scalars()

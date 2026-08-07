@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -29,10 +30,11 @@ def test_job_provider_is_abstract() -> None:
 
 
 def test_greenhouse_provider_queries_persisted_greenhouse_jobs() -> None:
-    session = Mock()
+    session = AsyncMock()
+    session.execute.return_value = Mock()
     session.execute.return_value.scalars.return_value.all.return_value = [_record()]
 
-    jobs = GreenHouseJobProvider(session).provide()
+    jobs = asyncio.run(GreenHouseJobProvider(session).provide())
 
     assert len(jobs) == 1
     assert isinstance(jobs[0], JobEntrySchema)

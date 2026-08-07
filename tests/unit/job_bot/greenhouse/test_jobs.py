@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 
@@ -52,10 +53,11 @@ def test_sync_fetches_and_upserts_greenhouse_jobs() -> None:
             },
         )
 
-    session = Mock()
+    session = AsyncMock()
+    session.execute.return_value = Mock()
     session.execute.return_value.scalars.return_value.all.return_value = [_board()]
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = GreenhouseJobSyncService(session, client=client).sync()
+        result = asyncio.run(GreenhouseJobSyncService(session, client=client).sync())
 
     assert result.boards_queried == 1
     assert result.boards_failed == 0
@@ -68,12 +70,15 @@ def test_sync_fetches_and_upserts_greenhouse_jobs() -> None:
 
 
 def test_sync_applies_board_policy_and_limit() -> None:
-    session = Mock()
+    session = AsyncMock()
+    session.execute.return_value = Mock()
     session.execute.return_value.scalars.return_value.all.return_value = []
 
-    GreenhouseJobSyncService(session, client=Mock()).sync(
-        policy=GreenhouseBoardSyncPolicy.MOST_JOBS,
-        board_limit=5,
+    asyncio.run(
+        GreenhouseJobSyncService(session, client=Mock()).sync(
+            policy=GreenhouseBoardSyncPolicy.MOST_JOBS,
+            board_limit=5,
+        )
     )
 
     select_statement = session.execute.call_args.args[0]
@@ -83,10 +88,10 @@ def test_sync_applies_board_policy_and_limit() -> None:
 
 
 def test_sync_rejects_non_positive_board_limit() -> None:
-    session = Mock()
+    session = AsyncMock()
 
     try:
-        GreenhouseJobSyncService(session, client=Mock()).sync(board_limit=0)
+        asyncio.run(GreenhouseJobSyncService(session, client=Mock()).sync(board_limit=0))
     except ValueError as exc:
         assert str(exc) == "board_limit must be at least 1"
     else:
@@ -125,12 +130,15 @@ def test_sync_filters_old_undated_and_keyword_mismatched_jobs() -> None:
             },
         )
 
-    session = Mock()
+    session = AsyncMock()
+    session.execute.return_value = Mock()
     session.execute.return_value.scalars.return_value.all.return_value = [_board()]
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = GreenhouseJobSyncService(session, client=client).sync(
-            include_keywords=["PYTHON"],
-            exclude_keywords=["staffing"],
+        result = asyncio.run(
+            GreenhouseJobSyncService(session, client=client).sync(
+                include_keywords=["PYTHON"],
+                exclude_keywords=["staffing"],
+            )
         )
 
     assert result.jobs_found == 0
@@ -185,7 +193,7 @@ def test_positive_keywords_only_match_job_title() -> None:
 
 
 def test_upsert_jobs_batches_large_syncs() -> None:
-    session = Mock()
+    session = AsyncMock()
     batch_size = 5_000
     jobs = [
         Job(
@@ -199,7 +207,7 @@ def test_upsert_jobs_batches_large_syncs() -> None:
         for index in range(batch_size + 1)
     ]
 
-    jobs_stored = GreenhouseJobSyncService(session, client=Mock())._upsert_jobs(jobs)
+    jobs_stored = asyncio.run(GreenhouseJobSyncService(session, client=Mock())._upsert_jobs(jobs))
 
     assert jobs_stored == len(jobs)
     assert session.execute.call_count == 2

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.pool import QueuePool
@@ -57,13 +58,15 @@ def test_postgresql_engine_uses_configured_connection_pool(
         assert engine.pool._recycle == 900
         assert engine.pool._pre_ping is True
     finally:
-        engine.dispose()
+        asyncio.run(engine.dispose())
 
 
 def test_upsert_boards_executes_one_statement_per_batch() -> None:
-    session = Mock()
+    session = AsyncMock()
 
-    count = upsert_boards(session, (_board(str(index)) for index in range(5)), batch_size=2)
+    count = asyncio.run(
+        upsert_boards(session, (_board(str(index)) for index in range(5)), batch_size=2)
+    )
 
     assert count == 5
     assert session.execute.call_count == 3
@@ -77,19 +80,19 @@ def test_upsert_boards_executes_one_statement_per_batch() -> None:
 
 
 def test_upsert_boards_does_not_execute_for_empty_input() -> None:
-    session = Mock()
+    session = AsyncMock()
 
-    count = upsert_boards(session, [])
+    count = asyncio.run(upsert_boards(session, []))
 
     assert count == 0
     session.execute.assert_not_called()
 
 
 def test_upsert_boards_rejects_invalid_batch_size() -> None:
-    session = Mock()
+    session = AsyncMock()
 
     try:
-        upsert_boards(session, [_board("example")], batch_size=0)
+        asyncio.run(upsert_boards(session, [_board("example")], batch_size=0))
     except ValueError as exc:
         assert str(exc) == "batch_size must be at least 1"
     else:
@@ -115,7 +118,7 @@ def test_company_name_filter_uses_trigram_fuzzy_matching() -> None:
 
 
 def test_list_boards_applies_same_company_name_filter_to_rows_and_count() -> None:
-    session = Mock()
+    session = AsyncMock()
     rows_result = Mock()
     rows_scalars = Mock()
     rows_scalars.all.return_value = []
@@ -126,7 +129,7 @@ def test_list_boards_applies_same_company_name_filter_to_rows_and_count() -> Non
     count_result.scalars.return_value = count_scalars
     session.execute.side_effect = [rows_result, count_result]
 
-    list_boards(session, company_name="Acne")
+    asyncio.run(list_boards(session, company_name="Acne"))
 
     assert session.execute.call_count == 2
 

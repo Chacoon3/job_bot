@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from time import perf_counter_ns
 
 import structlog
-from sqlalchemy import Engine, create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from job_bot.config import setting_value, settings
 
@@ -19,7 +23,7 @@ DB_POOL_RECYCLE_ENV = "DB_POOL_RECYCLE_SECONDS"
 logger = structlog.get_logger(__name__)
 
 
-class TimedSession(Session):
+class TimedAsyncSession(AsyncSession):
     """Log the database time spent committing or rolling back a transaction."""
 
     def _record_transaction(self, operation: str, started_at: int, status: str) -> None:
@@ -30,19 +34,19 @@ class TimedSession(Session):
             duration_ms=round((perf_counter_ns() - started_at) / 1_000_000, 3),
         )
 
-    def commit(self) -> None:
+    async def commit(self) -> None:
         started_at = perf_counter_ns()
         try:
-            super().commit()
+            await super().commit()
         except Exception:
             self._record_transaction("commit", started_at, "error")
             raise
         self._record_transaction("commit", started_at, "success")
 
-    def rollback(self) -> None:
+    async def rollback(self) -> None:
         started_at = perf_counter_ns()
         try:
-            super().rollback()
+            await super().rollback()
         except Exception:
             self._record_transaction("rollback", started_at, "error")
             raise
@@ -64,14 +68,14 @@ def _integer_setting(name: str, default: int, minimum: int = 0) -> int:
     return value
 
 
-def create_database_engine(database_url: str | None = None) -> Engine:
+def create_database_engine(database_url: str | None = None) -> AsyncEngine:
     url = database_url or settings().DATABASE_URL
     if not url:
         raise RuntimeError(
             f"{DATABASE_URL_ENV} is required; expected a "
             "postgresql+psycopg://user:password@host:5432/database URL"
         )
-    return create_engine(
+    return create_async_engine(
         url,
         pool_size=_integer_setting(DB_POOL_SIZE_ENV, 10, minimum=1),
         max_overflow=_integer_setting(DB_MAX_OVERFLOW_ENV, 20),
@@ -81,18 +85,20 @@ def create_database_engine(database_url: str | None = None) -> Engine:
     )
 
 
-def create_session_factory(engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(bind=engine, class_=TimedSession, expire_on_commit=False)
+def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[TimedAsyncSession]:
+    return async_sessionmaker(bind=engine, class_=TimedAsyncSession, expire_on_commit=False)
 
 
-@contextmanager
-def session_scope(factory: sessionmaker[Session]) -> Iterator[Session]:
+@asynccontextmanager
+async def session_scope(
+    factory: async_sessionmaker[TimedAsyncSession],
+) -> AsyncIterator[TimedAsyncSession]:
     session = factory()
     try:
         yield session
-        session.commit()
+        await session.commit()
     except Exception:
-        session.rollback()
+        await session.rollback()
         raise
     finally:
-        session.close()
+        await session.close()

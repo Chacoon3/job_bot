@@ -10,7 +10,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_bot.api.dependencies import get_session
 from job_bot.config import settings
@@ -234,11 +234,11 @@ def _response(record: ORMUser) -> UserResponse:
 
 
 @router.get("/{user_id}")
-def read_user(
+async def read_user(
     user_id: UUID,
-    session: Annotated[Session, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserResponse:
-    record = get_user_by_id(session, user_id)
+    record = await get_user_by_id(session, user_id)
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -251,7 +251,7 @@ def read_user(
 async def create_user(
     supplement: Annotated[UserSupplement, Depends(_supplement_from_form)],
     resume: Annotated[UploadFile, File(description="PDF or Word resume, up to 10 MiB")],
-    session: Annotated[Session, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserResponse:
     """Create or replace a user based on the resume's email address."""
     return await _upsert_user_from_upload(
@@ -266,10 +266,10 @@ async def replace_existing_user(
     user_id: UUID,
     supplement: Annotated[UserSupplement, Depends(_supplement_from_form)],
     resume: Annotated[UploadFile, File(description="PDF or Word resume, up to 10 MiB")],
-    session: Annotated[Session, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserResponse:
     """Replace a user identified by its immutable identifier."""
-    if get_user_by_id(session, user_id) is None:
+    if await get_user_by_id(session, user_id) is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -286,7 +286,7 @@ async def _upsert_user_from_upload(
     *,
     supplement: UserSupplement,
     resume: UploadFile,
-    session: Session,
+    session: AsyncSession,
     user_id: UUID | None = None,
 ) -> UserResponse:
     filename = Path(resume.filename or "resume").name
@@ -314,29 +314,29 @@ async def _upsert_user_from_upload(
         "resume_filename": filename,
         "resume_sha256": hashlib.sha256(content).hexdigest(),
     }
-    record = (
+    record = await (
         replace_user_record(session, user_id=user_id, **values)
         if user_id is not None
         else upsert_user(session, **values)
     )
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    session.commit()
-    session.refresh(record)
+    await session.commit()
+    await session.refresh(record)
     return _response(record)
 
 
 @router.delete("/{user_id}")
-def remove_user(
+async def remove_user(
     user_id: UUID,
-    session: Annotated[Session, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserResponse:
-    record = delete_user(session, user_id)
+    record = await delete_user(session, user_id)
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
     response = _response(record)
-    session.commit()
+    await session.commit()
     return response

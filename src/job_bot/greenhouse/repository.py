@@ -7,7 +7,7 @@ from typing import TypeVar
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
@@ -49,8 +49,8 @@ def _build_company_name_filter(company_name: str) -> ColumnElement[bool]:
     )
 
 
-def upsert_boards(
-    session: Session,
+async def upsert_boards(
+    session: AsyncSession,
     boards: Iterable[DiscoveredBoard],
     *,
     batch_size: int = DEFAULT_UPSERT_BATCH_SIZE,
@@ -110,14 +110,14 @@ def upsert_boards(
             for board in batch
         ]
 
-        session.execute(upsert_statement, values)
+        await session.execute(upsert_statement, values)
         processed += len(values)
 
     return processed
 
 
-def list_boards(
-    session: Session,
+async def list_boards(
+    session: AsyncSession,
     *,
     token: str | None = None,
     company_name: str | None = None,
@@ -189,12 +189,14 @@ def list_boards(
     ordering = order_column.desc() if sort_desc else order_column.asc()
 
     rows = (
-        session.execute(
-            statement.order_by(ordering, GreenhouseBoard.id.asc()).limit(limit).offset(offset)
+        (
+            await session.execute(
+                statement.order_by(ordering, GreenhouseBoard.id.asc()).limit(limit).offset(offset)
+            )
         )
         .scalars()
         .all()
     )
-    total = len(session.execute(count_statement).scalars().all())
+    total = len((await session.execute(count_statement)).scalars().all())
 
     return rows, total

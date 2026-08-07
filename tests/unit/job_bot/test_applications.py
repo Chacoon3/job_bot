@@ -41,8 +41,10 @@ def test_canonical_job_url_rejects_unsafe_or_relative_values(job_url: str) -> No
         canonical_job_url(job_url)
 
 
-def _session_with_active(active=None, attempt_number: int = 0) -> Mock:
-    session = Mock()
+def _session_with_active(active=None, attempt_number: int = 0) -> AsyncMock:
+    session = AsyncMock()
+    session.add = Mock()
+    session.scalars.return_value = Mock()
     session.scalars.return_value.first.return_value = active
     session.scalar.return_value = attempt_number
     return session
@@ -63,10 +65,12 @@ def test_successful_attempt_prevents_another_reservation() -> None:
     )
     session = _session_with_active(existing)
 
-    reservation = reserve_application_attempt(
-        session,
-        user_id=user_id,
-        job_url=existing.job_url,
+    reservation = asyncio.run(
+        reserve_application_attempt(
+            session,
+            user_id=user_id,
+            job_url=existing.job_url,
+        )
     )
 
     assert reservation.attempt is existing
@@ -80,11 +84,13 @@ def test_failed_history_gets_a_numbered_retry() -> None:
     user_id = uuid4()
     timestamp = datetime(2026, 8, 6, tzinfo=UTC)
 
-    reservation = reserve_application_attempt(
-        session,
-        user_id=user_id,
-        job_url="https://example.com/jobs/1?utm_source=test",
-        now=timestamp,
+    reservation = asyncio.run(
+        reserve_application_attempt(
+            session,
+            user_id=user_id,
+            job_url="https://example.com/jobs/1?utm_source=test",
+            now=timestamp,
+        )
     )
 
     assert reservation.should_execute is True
@@ -111,11 +117,13 @@ def test_expired_attempt_is_failed_before_retry() -> None:
     )
     session = _session_with_active(existing, attempt_number=2)
 
-    reservation = reserve_application_attempt(
-        session,
-        user_id=existing.user_id,
-        job_url=existing.job_url,
-        now=timestamp,
+    reservation = asyncio.run(
+        reserve_application_attempt(
+            session,
+            user_id=existing.user_id,
+            job_url=existing.job_url,
+            now=timestamp,
+        )
     )
 
     assert existing.status == "failed"
@@ -127,15 +135,17 @@ def test_expired_attempt_is_failed_before_retry() -> None:
 
 def test_complete_attempt_records_failure_details() -> None:
     attempt = SimpleNamespace(status="in_progress")
-    session = Mock()
+    session = AsyncMock()
     session.scalar.return_value = attempt
     failure = RuntimeError("browser failed")
 
-    result = complete_application_attempt(
-        session,
-        uuid4(),
-        status="failed",
-        error=failure,
+    result = asyncio.run(
+        complete_application_attempt(
+            session,
+            uuid4(),
+            status="failed",
+            error=failure,
+        )
     )
 
     assert result is attempt
@@ -155,10 +165,10 @@ def test_run_application_once_skips_prior_success(monkeypatch) -> None:
     monkeypatch.setattr(
         applications,
         "reserve_application_attempt",
-        lambda *_args, **_kwargs: reservation,
+        AsyncMock(return_value=reservation),
     )
     operation = AsyncMock()
-    session = Mock()
+    session = AsyncMock()
 
     result = asyncio.run(
         run_application_once(
@@ -182,12 +192,12 @@ def test_run_application_once_records_success(monkeypatch) -> None:
     monkeypatch.setattr(
         applications,
         "reserve_application_attempt",
-        lambda *_args, **_kwargs: reservation,
+        AsyncMock(return_value=reservation),
     )
-    complete = Mock(return_value=completed)
+    complete = AsyncMock(return_value=completed)
     monkeypatch.setattr(applications, "complete_application_attempt", complete)
     operation = AsyncMock()
-    session = Mock()
+    session = AsyncMock()
 
     result = asyncio.run(
         run_application_once(
@@ -201,7 +211,7 @@ def test_run_application_once_records_success(monkeypatch) -> None:
     assert result.executed is True
     assert result.attempt is completed
     operation.assert_awaited_once_with()
-    complete.assert_called_once_with(session, attempt.attempt_id, status="succeeded")
+    complete.assert_awaited_once_with(session, attempt.attempt_id, status="succeeded")
     assert session.commit.call_count == 2
 
 
@@ -211,16 +221,16 @@ def test_run_application_once_records_failure_and_reraises(monkeypatch) -> None:
     monkeypatch.setattr(
         applications,
         "reserve_application_attempt",
-        lambda *_args, **_kwargs: reservation,
+        AsyncMock(return_value=reservation),
     )
-    complete = Mock(return_value=attempt)
+    complete = AsyncMock(return_value=attempt)
     monkeypatch.setattr(applications, "complete_application_attempt", complete)
     failure = RuntimeError("submission failed")
 
     async def fail() -> None:
         raise failure
 
-    session = Mock()
+    session = AsyncMock()
     with pytest.raises(RuntimeError) as exc_info:
         asyncio.run(
             run_application_once(
@@ -232,7 +242,7 @@ def test_run_application_once_records_failure_and_reraises(monkeypatch) -> None:
         )
 
     assert exc_info.value is failure
-    complete.assert_called_once_with(
+    complete.assert_awaited_once_with(
         session,
         attempt.attempt_id,
         status="failed",

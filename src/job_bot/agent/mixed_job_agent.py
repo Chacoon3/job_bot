@@ -18,7 +18,7 @@ from langgraph.runtime import Runtime
 from playwright.async_api import Playwright
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
 from job_bot.applier.greenhouse_applier import GreenHouseFiller
@@ -49,24 +49,28 @@ def _page_inspections_cache_key(
     return _page_inspections_key(url, version)
 
 
-def _load_page_inspections(session: Session, url: str, version: str) -> list[PageInspection]:
-    records = session.scalars(
-        select(JobPageInspection)
-        .join(Job)
-        .where(Job.url == url, JobPageInspection.version == version)
-        .order_by(JobPageInspection.page_index)
+async def _load_page_inspections(
+    session: AsyncSession, url: str, version: str
+) -> list[PageInspection]:
+    records = (
+        await session.scalars(
+            select(JobPageInspection)
+            .join(Job)
+            .where(Job.url == url, JobPageInspection.version == version)
+            .order_by(JobPageInspection.page_index)
+        )
     ).all()
     return [PageInspection.model_validate(record.inspection) for record in records]
 
 
-def _save_page_inspections(
-    session: Session,
+async def _save_page_inspections(
+    session: AsyncSession,
     url: str,
     version: str,
     inspections: list[PageInspection],
 ) -> None:
     try:
-        job = session.scalar(select(Job).where(Job.url == url))
+        job = await session.scalar(select(Job).where(Job.url == url))
         if job is None:
             job = Job(
                 job_title=url[:512],
@@ -76,7 +80,7 @@ def _save_page_inspections(
                 jd_summary="",
             )
             session.add(job)
-            session.flush()
+            await session.flush()
 
         session.add_all(
             JobPageInspection(
@@ -87,10 +91,10 @@ def _save_page_inspections(
             )
             for page_index, inspection in enumerate(inspections)
         )
-        session.commit()
+        await session.commit()
         AppRedisCache.delete(_page_inspections_key(url, version))
     except Exception:
-        session.rollback()
+        await session.rollback()
         raise
 
 
@@ -110,13 +114,13 @@ class _AgentContext(BaseModel):
     model: Runnable[LanguageModelInput, AIMessage] | None = None
 
 
-async def inspect_page(url: str, session: Session) -> list[PageInspection]:
+async def inspect_page(url: str, session: AsyncSession) -> list[PageInspection]:
     model = settings().JOB_BOT_LLM_MODEL
     if not model:
         raise RuntimeError("Environment variable JOB_BOT_LLM_MODEL is not set.")
 
     version = schema_string_key(url + model, PageInspection)
-    cached_inspections = _load_page_inspections(session, url, version)
+    cached_inspections = await _load_page_inspections(session, url, version)
     if cached_inspections:
         return cached_inspections
 
@@ -168,7 +172,7 @@ async def inspect_page(url: str, session: Session) -> list[PageInspection]:
         )
 
     inspections = [inspection]
-    _save_page_inspections(session, url, version, inspections)
+    await _save_page_inspections(session, url, version, inspections)
     return inspections
 
 

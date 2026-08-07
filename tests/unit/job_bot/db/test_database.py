@@ -1,28 +1,28 @@
 from __future__ import annotations
 
-from unittest.mock import Mock
+import asyncio
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_bot.db import database
-from job_bot.db.database import TimedSession, create_session_factory
+from job_bot.db.database import TimedAsyncSession, create_database_engine, create_session_factory
 
 
 def test_session_factory_tracks_commit_execution_time(monkeypatch) -> None:
     logger = Mock()
     monkeypatch.setattr(database, "logger", logger)
-    engine = create_engine("sqlite://")
+    engine = create_database_engine("postgresql+psycopg://user:password@localhost/job_bot")
     session = create_session_factory(engine)()
 
     try:
-        assert isinstance(session, TimedSession)
-        session.execute(text("SELECT 1"))
-        session.commit()
+        assert isinstance(session, TimedAsyncSession)
+        monkeypatch.setattr(AsyncSession, "commit", AsyncMock())
+        asyncio.run(session.commit())
     finally:
-        session.close()
-        engine.dispose()
+        asyncio.run(session.close())
+        asyncio.run(engine.dispose())
 
     logger.info.assert_called_once()
     (event,) = logger.info.call_args.args
@@ -36,16 +36,16 @@ def test_session_factory_tracks_commit_execution_time(monkeypatch) -> None:
 def test_session_tracks_failed_transaction_time(monkeypatch) -> None:
     logger = Mock()
     monkeypatch.setattr(database, "logger", logger)
-    session = TimedSession()
+    session = TimedAsyncSession()
     failure = RuntimeError("commit failed")
 
-    def fail_commit(_: Session) -> None:
+    async def fail_commit(_: AsyncSession) -> None:
         raise failure
 
-    monkeypatch.setattr(Session, "commit", fail_commit)
+    monkeypatch.setattr(AsyncSession, "commit", fail_commit)
 
     with pytest.raises(RuntimeError) as exc_info:
-        session.commit()
+        asyncio.run(session.commit())
 
     assert exc_info.value is failure
     logger.info.assert_called_once_with(

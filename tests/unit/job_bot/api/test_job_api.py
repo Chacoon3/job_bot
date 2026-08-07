@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
 from job_bot.api import api_v1 as job
@@ -10,7 +11,7 @@ class DummySession:
     def __init__(self) -> None:
         self.committed = False
 
-    def commit(self) -> None:
+    async def commit(self) -> None:
         self.committed = True
 
 
@@ -37,7 +38,7 @@ def test_load_jobs_converts_upserts_and_commits(monkeypatch) -> None:
         def provide(self) -> list[JobEntrySchema]:
             return [_sample_job()]
 
-    def fake_batched_upsert(
+    async def fake_batched_upsert(
         received_session: object,
         model: object,
         rows: object,
@@ -52,12 +53,14 @@ def test_load_jobs_converts_upserts_and_commits(monkeypatch) -> None:
     monkeypatch.setattr(job, "LLMJobProvider", FakeProvider)
     monkeypatch.setattr(job, "batched_upsert", fake_batched_upsert)
 
-    result = job.load_jobs(
-        job.LoadJobQuery(
-            company_names=["Example"],
-            earliest_post_date=datetime(2026, 7, 1, tzinfo=UTC),
-        ),
-        session,  # type: ignore[arg-type]
+    result = asyncio.run(
+        job.load_jobs(
+            job.LoadJobQuery(
+                company_names=["Example"],
+                earliest_post_date=datetime(2026, 7, 1, tzinfo=UTC),
+            ),
+            session,  # type: ignore[arg-type]
+        )
     )
 
     assert result[0].source == "llm"

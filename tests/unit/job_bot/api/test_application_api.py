@@ -37,7 +37,10 @@ def test_apply_returns_prior_success_without_running_browser(monkeypatch) -> Non
         calls.update(session=received_session, **kwargs)
         return ApplicationRunResult(attempt, False, "already_succeeded")
 
-    monkeypatch.setattr(job_api, "get_user", lambda *_args: SimpleNamespace(id=user_id))
+    async def fake_get_user(*_args):
+        return SimpleNamespace(id=user_id)
+
+    monkeypatch.setattr(job_api, "get_user_by_email", fake_get_user)
     monkeypatch.setattr(job_api, "user_from_record", lambda _record: _user())
     monkeypatch.setattr(job_api, "run_application_once", fake_run)
     monkeypatch.setattr(
@@ -49,7 +52,7 @@ def test_apply_returns_prior_success_without_running_browser(monkeypatch) -> Non
     app.dependency_overrides[dependencies.require_browser_automation] = lambda: None
     try:
         response = TestClient(app).post(
-            "/apiv2/apply",
+            "/apiv2/job/apply",
             data={
                 "email": "alex@example.com",
                 "job_url": "https://example.com/jobs/1",
@@ -83,14 +86,17 @@ def test_apply_reports_an_attempt_already_in_progress(monkeypatch) -> None:
     async def fake_run(*_args, **_kwargs):
         return ApplicationRunResult(attempt, False, "in_progress")
 
-    monkeypatch.setattr(job_api, "get_user", lambda *_args: SimpleNamespace(id=uuid4()))
+    async def fake_get_user(*_args):
+        return SimpleNamespace(id=uuid4())
+
+    monkeypatch.setattr(job_api, "get_user_by_email", fake_get_user)
     monkeypatch.setattr(job_api, "user_from_record", lambda _record: _user())
     monkeypatch.setattr(job_api, "run_application_once", fake_run)
     app.dependency_overrides[dependencies.get_session] = lambda: session
     app.dependency_overrides[dependencies.require_browser_automation] = lambda: None
     try:
         response = TestClient(app).post(
-            "/apiv2/apply",
+            "/apiv2/job/apply",
             data={
                 "email": "alex@example.com",
                 "job_url": "https://example.com/jobs/1",

@@ -7,7 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_bot.api.dependencies import get_session
 from job_bot.data.schemas import GreenhouseBoardSchema
@@ -57,7 +57,7 @@ class GreenhouseJobSyncResponse(BaseModel):
 
 @router.get("/boards")
 async def get_boards(
-    session: Annotated[Session, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session)],
     token: str | None = Query(default=None, min_length=1, max_length=255),
     company_name: str | None = Query(default=None, min_length=1, max_length=512),
     crawl_index: str | None = Query(default=None, min_length=1, max_length=64),
@@ -71,7 +71,7 @@ async def get_boards(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> GreenhouseBoardListResponse:
-    boards, total = list_boards(
+    boards, total = await list_boards(
         session,
         token=token,
         company_name=company_name,
@@ -96,7 +96,7 @@ async def get_boards(
 
 @router.post("/boards/discover")
 async def discover_boards(
-    config: DiscoveryConfig, session: Annotated[Session, Depends(get_session)]
+    config: DiscoveryConfig, session: Annotated[AsyncSession, Depends(get_session)]
 ) -> DiscoveryReport:
     if config.approach == "global":
         discoverer = GreenhouseGlobalDiscoverer(config)
@@ -108,24 +108,24 @@ async def discover_boards(
         )
 
     report = await discoverer.discover()
-    upsert_boards(session, report.boards)
-    session.commit()
+    await upsert_boards(session, report.boards)
+    await session.commit()
     return report
 
 
 @router.post("/greenhouse/jobs/sync")
-def sync_greenhouse_jobs(
-    session: Annotated[Session, Depends(get_session)],
+async def sync_greenhouse_jobs(
+    session: Annotated[AsyncSession, Depends(get_session)],
     policy: GreenhouseBoardSyncPolicy = GreenhouseBoardSyncPolicy.RECENTLY_UPDATED,
     board_limit: int | None = Query(default=None, ge=1),
     include_keywords: Annotated[list[str] | None, Query()] = None,
     exclude_keywords: Annotated[list[str] | None, Query()] = None,
 ) -> GreenhouseJobSyncResponse:
-    result = GreenhouseJobSyncService(session).sync(
+    result = await GreenhouseJobSyncService(session).sync(
         policy=policy,
         board_limit=board_limit,
         include_keywords=include_keywords or (),
         exclude_keywords=exclude_keywords or (),
     )
-    session.commit()
+    await session.commit()
     return GreenhouseJobSyncResponse.model_validate(result, from_attributes=True)

@@ -8,7 +8,7 @@ import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_bot.api.dependencies import get_session, require_browser_automation
 from job_bot.data.schemas import ApplicationFileSet, JobEntrySchema
@@ -63,7 +63,7 @@ def _fallback_greenhouse_board(company_name: str) -> GreenhouseBoard:
 
 @router.get("/")
 async def get_company_jobs(
-    session: Annotated[Session, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
     company_names: Annotated[str | None, Query()] = None,
     posted_after: Annotated[
@@ -85,7 +85,7 @@ async def get_company_jobs(
     if company_names_list:
         boards_by_token: dict[str, GreenhouseBoard] = {}
         for company_name in company_names_list:
-            boards, _ = list_boards(
+            boards, _ = await list_boards(
                 session,
                 company_name=company_name,
                 limit=50,
@@ -96,11 +96,13 @@ async def get_company_jobs(
         boards = list(boards_by_token.values())
     else:
         boards = list(
-            session.execute(
-                select(GreenhouseBoard)
-                .where(GreenhouseBoard.active_job_count > 0)
-                .order_by(func.random())
-                .limit(3)
+            (
+                await session.execute(
+                    select(GreenhouseBoard)
+                    .where(GreenhouseBoard.active_job_count > 0)
+                    .order_by(func.random())
+                    .limit(3)
+                )
             )
             .scalars()
             .all()
@@ -134,7 +136,7 @@ async def get_company_jobs(
 
 @router.post("/apply")
 async def apply_job(
-    session: Annotated[Session, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session)],
     email: Annotated[str | None, Form()] = None,
     resume: Annotated[UploadFile | None, File()] = None,
     cover_letter: Annotated[UploadFile | None, File()] = None,
@@ -168,7 +170,7 @@ async def apply_job(
             detail="Job URL is required",
         )
 
-    user_record = get_user_by_email(session, email)
+    user_record = await get_user_by_email(session, email)
     if user_record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

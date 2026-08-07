@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_bot.api.dependencies import get_session, require_browser_automation
 from job_bot.applier.flow import (
@@ -59,9 +59,9 @@ class LoadJobQuery(BaseModel):
 
 
 @router.post("/jobs/load")
-def load_jobs(
+async def load_jobs(
     query: LoadJobQuery,
-    session: Annotated[Session, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session)],
     _browser_enabled: Annotated[None, Depends(require_browser_automation)] = None,
 ) -> list[JobEntrySchema]:
     job_provider = LLMJobProvider(
@@ -72,7 +72,7 @@ def load_jobs(
     jobs = job_provider.provide()
     jobs = [job.model_copy(update={"source": "llm"}) for job in jobs]
     records = [job.to_orm_model() for job in jobs]
-    batched_upsert(
+    await batched_upsert(
         session,
         Job,
         (
@@ -98,7 +98,7 @@ def load_jobs(
             Job.updated_at,
         ],
     )
-    session.commit()
+    await session.commit()
 
     return jobs
 

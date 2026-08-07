@@ -14,7 +14,7 @@ class DummySession:
     def __init__(self, boards: list[SimpleNamespace] | None = None) -> None:
         self.boards = boards or []
 
-    def execute(self, statement):
+    async def execute(self, statement):
         self.statement = statement
         return SimpleNamespace(
             scalars=lambda: SimpleNamespace(all=lambda: self.boards),
@@ -44,7 +44,7 @@ def test_get_company_jobs_fetches_named_boards_filters_and_sorts(monkeypatch) ->
     now = datetime.now(UTC)
     captured: dict[str, object] = {}
 
-    def fake_list_boards(_session, **kwargs):
+    async def fake_list_boards(_session, **kwargs):
         captured.setdefault("names", []).append(kwargs["company_name"])
         return [_board(kwargs["company_name"])], 1
 
@@ -103,7 +103,7 @@ def test_get_company_jobs_falls_back_to_company_slug_when_board_is_missing(monke
     session = DummySession()
     fetched_tokens: list[str] = []
 
-    def fake_list_boards(_session, **kwargs):
+    async def fake_list_boards(_session, **kwargs):
         if kwargs["company_name"] == "Known Company":
             return [_board("stored-token")], 1
         return [], 0

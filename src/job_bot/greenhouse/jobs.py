@@ -9,7 +9,7 @@ from typing import Any, TypeVar
 import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.stdlib import get_logger
 
 from job_bot.db.greenhouse_models import GreenhouseBoard
@@ -84,7 +84,7 @@ class GreenhouseJobSyncService:
 
     def __init__(
         self,
-        session: Session,
+        session: AsyncSession,
         *,
         client: httpx.Client | None = None,
         request_timeout_seconds: float = 30.0,
@@ -93,7 +93,7 @@ class GreenhouseJobSyncService:
         self.client = client
         self.request_timeout_seconds = request_timeout_seconds
 
-    def sync(
+    async def sync(
         self,
         *,
         policy: GreenhouseBoardSyncPolicy = GreenhouseBoardSyncPolicy.RECENTLY_UPDATED,
@@ -127,7 +127,7 @@ class GreenhouseJobSyncService:
         if board_limit is not None:
             statement = statement.limit(board_limit)
 
-        boards = list(self.session.execute(statement).scalars().all())
+        boards = list((await self.session.execute(statement)).scalars().all())
         posted_after = datetime.now(UTC) - GREENHOUSE_JOB_MAX_AGE
         if self.client is not None:
             jobs, boards_failed = self._fetch_jobs(
@@ -150,7 +150,7 @@ class GreenhouseJobSyncService:
                     exclude_keywords=exclude_keywords,
                 )
 
-        jobs_stored = self._upsert_jobs(jobs)
+        jobs_stored = await self._upsert_jobs(jobs)
         return GreenhouseJobSyncResult(
             boards_queried=len(boards),
             boards_failed=boards_failed,
@@ -268,7 +268,7 @@ class GreenhouseJobSyncService:
             return False
         return not included or any(keyword in title_text for keyword in included)
 
-    def _upsert_jobs(self, jobs: list[Job]) -> int:
+    async def _upsert_jobs(self, jobs: list[Job]) -> int:
         values = (
             {
                 "source": job.source,
@@ -281,7 +281,7 @@ class GreenhouseJobSyncService:
             }
             for job in jobs
         )
-        return batched_upsert(
+        return await batched_upsert(
             self.session,
             Job,
             values,
