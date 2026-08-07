@@ -18,5 +18,13 @@
   "pylint.enabled": true,
   "pylint.cwd": "${workspaceFolder}",
   "isort.args": ["--profile", "black"],
+  "github.copilot.chat.commitMessageGeneration.instructions": [
+    {
+      "text": "Generate a commit message of 30 words or fewer. Every item must exactly match [<type>]: <message>, where <type> is a conventional type such as feat, fix, test, docs, refactor, perf, build, ci, chore, devops, or revert. Use imperative, specific language and do not end the subject with a period."
+    },
+    {
+      "file": ".github/skills/concise-commit-message/SKILL.md"
+    }
+  ],
   "chat.permissions.default": "autopilot"
 }

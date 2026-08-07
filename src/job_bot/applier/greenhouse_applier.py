@@ -2,7 +2,7 @@ import asyncio
 import re
 from typing import Any
 
-from playwright.async_api import expect
+from playwright.async_api import Response, expect
 from structlog import get_logger
 from structlog.contextvars import bind_contextvars, unbind_contextvars
 
@@ -10,6 +10,7 @@ from job_bot.agent.applier import BaseApplier
 from job_bot.agent.dropdown_regulator import get_dropdown_regulator_by_field_key
 from job_bot.agent.file_upload import upload_greenhouse_cover_letter, upload_greenhouse_resume
 from job_bot.agent.fill_form_agent import (
+    agent_infer_application_status,
     agent_infer_interactive_element_answer,
 )
 from job_bot.agent.filler_tools import (
@@ -29,6 +30,15 @@ from job_bot.utils.file_tools import is_same_file_content
 def _canonicalize_phone_number(value: object) -> str:
     """Return the digits used to compare differently formatted phone numbers."""
     return re.sub(r"\D", "", str(value))
+
+
+def _is_submission_response(response: Response) -> bool:
+    """Return whether a response can represent the form submission request."""
+    return response.request.method == "POST" and response.request.resource_type in {
+        "document",
+        "fetch",
+        "xhr",
+    }
 
 
 def _has_correct_value(field: FormField, expected_value: object) -> bool:
@@ -361,14 +371,35 @@ class GreenHouseFiller(BaseApplier):
                 )
 
     async def submit(self, button_info: FormField) -> None:
+        page = self.browser_session.page()
         submit_button_locator = locate_by_accessible_name(
-            self.browser_session.page(),
+            page,
             button_info.accessible_name,
             "button",
         )
         await expect(submit_button_locator).to_be_visible(timeout=5000)
-        await submit_button_locator.click()
-        get_logger().info("Application submitted successfully.")
+
+        # locator.click() waits for actionability and navigations, but a Greenhouse
+        # form may submit through fetch/XHR. Start listening before clicking so the
+        # response cannot race past us, and do not return until its body is complete.
+        async with page.expect_response(
+            _is_submission_response,
+            timeout=30_000,
+        ) as response_info:
+            await submit_button_locator.click()
+
+        response = await response_info.value
+        failure = await response.finished()
+        if failure is not None:
+            raise IncompleteApplicationError(f"Submission request failed: {failure}")
+        if not response.ok:
+            raise IncompleteApplicationError(f"Submission request returned HTTP {response.status}.")
+
+        get_logger().info(
+            "Application submission request completed.",
+            response_status=response.status,
+            response_url=response.url,
+        )
 
     async def apply(self) -> None:
 
@@ -395,5 +426,19 @@ class GreenHouseFiller(BaseApplier):
             )
             if submit_button is None:
                 raise IncompleteApplicationError("Submit button not found.")
+
             await self.submit(submit_button)
-            await asyncio.sleep(10)  # Wait for 3 seconds before final inspection
+
+            llm_inferred_status = await agent_infer_application_status(
+                OpenAILLMProvider().get_model(), build_greenhouse_tools(browser_session, "read")
+            )
+
+            get_logger().info(
+                "LLM inferred application submission status",
+                llm_inferred_status=llm_inferred_status,
+            )
+
+            if llm_inferred_status != "success":
+                raise IncompleteApplicationError(
+                    f"Application submission may have failed. LLM inferred status: {llm_inferred_status}"
+                )

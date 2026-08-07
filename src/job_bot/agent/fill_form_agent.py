@@ -6,7 +6,7 @@ import json
 from collections.abc import Callable
 from functools import cache
 from operator import add
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from langchain.chat_models import BaseChatModel
 from langchain.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
@@ -85,7 +85,8 @@ class _State(BaseModel):
     tool_call_count: Annotated[int, add] = 0
     failure_count: Annotated[int, add] = 0
     retry_count: Annotated[int, add] = 0
-    answers: Annotated[list[FormAnswer], add] = Field(default_factory=list)
+    structured_output_type: type[BaseModel] | None = None
+    structured_output: BaseModel | None = None
 
 
 class _Runtime(BaseModel):
@@ -117,7 +118,7 @@ async def _act(state: _State, runtime: Runtime[_Runtime]) -> _State:
     # This could involve interacting with the browser session, sending messages to the model, etc.
 
     msg = await runtime.context.model_with_browser_tools.ainvoke(state.messages)
-    return _State(messages=[msg], call_count=1, answers=state.answers)
+    return _State(messages=[msg], call_count=1)
 
 
 async def _use_tool(
@@ -179,7 +180,7 @@ async def _use_tool(
 
 async def _evaluate(state: _State, runtime: Runtime[_Runtime]) -> _State:
     """
-    translates the model output to structured data for the form fields.
+    Translates the model output to structured data for the form fields.
 
     Args:
         state (_State): The current state of the application process.
@@ -190,20 +191,20 @@ async def _evaluate(state: _State, runtime: Runtime[_Runtime]) -> _State:
     """
     if not state.messages:
         raise RuntimeError("Agent state contains no messages.")
-    structured = runtime.context.model.with_structured_output(AgentInferredFormAnswer)
-    msg: AgentInferredFormAnswer = await structured.ainvoke(
+    structured = runtime.context.model.with_structured_output(state.structured_output_type)
+    msg: BaseModel = await structured.ainvoke(
         state.messages
         + [
             HumanMessage(
                 content=(
                     "Based on the above, convert the answers to an object. "
-                    f"The schema is {AgentInferredFormAnswer.model_json_schema()}. "
+                    f"The schema is {state.structured_output_type.model_json_schema()}. "
                     "Return the object as JSON and nothing else."
                 )
             )
         ]
     )
-    return _State(call_count=0, answers=msg.answers)
+    return _State(call_count=0, structured_output=msg)
 
 
 def post_act_router(state: _State) -> str:
@@ -307,8 +308,47 @@ async def agent_infer_interactive_element_answer(
                     f"'{', '.join(field.accessible_name for field in fields)}'."
                 )
             ),
-        ]
+        ],
+        structured_output_type=AgentInferredFormAnswer,
     )
 
     result = await _get_answer_agent().ainvoke(state, context=runtime)
-    return result["answers"]
+    return result["structured_output"].answers if result["structured_output"] else []
+
+
+async def agent_infer_application_status(
+    model: BaseChatModel, tools: list[BaseTool]
+) -> Literal["success", "failure", "unknown"]:
+    """
+    Ask the agent to infer the application status based on the model's messages.
+
+    Args:
+        model (BaseChatModel): The chat model to use for the agent.
+        tools (list[BaseTool]): The list of tools to use for the agent.
+
+    Returns:
+        Literal['success', 'failure', 'unknown']: The inferred application status.
+    """
+    tool_registry = {tool.name: tool for tool in tools}
+    model_with_browser_tools = model.bind_tools(tools)
+    runtime = _Runtime(
+        model_with_browser_tools=model_with_browser_tools, model=model, tool_registry=tool_registry
+    )
+
+    class ApplicationStatusAnswer(BaseModel):
+        status: Literal["success", "failure", "unknown"]
+
+    state = _State(
+        messages=[
+            SystemMessage(
+                content=(
+                    "You are a browser automation assistant."
+                    "Your task is to inspect the webpage and determine whether the application was successful or failed."
+                )
+            ),
+        ],
+        structured_output_type=ApplicationStatusAnswer,
+    )
+
+    result = await _get_answer_agent().ainvoke(state, context=runtime)
+    return result["structured_output"].status if result["structured_output"] else "unknown"

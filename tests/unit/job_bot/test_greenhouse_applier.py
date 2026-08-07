@@ -1,4 +1,6 @@
-from job_bot.applier.greenhouse_applier import _has_correct_value
+from unittest.mock import MagicMock
+
+from job_bot.applier.greenhouse_applier import _has_correct_value, _is_submission_response
 from job_bot.schemas import FormField, FormOption, InspectedFile, UploadableFile
 
 
@@ -150,3 +152,24 @@ def test_has_correct_value_rejects_missing_required_upload() -> None:
     )
 
     assert not _has_correct_value(field, None)
+
+
+def test_submission_response_accepts_form_post_transport_types() -> None:
+    for resource_type in ("document", "fetch", "xhr"):
+        response = MagicMock()
+        response.request.method = "POST"
+        response.request.resource_type = resource_type
+
+        assert _is_submission_response(response)
+
+
+def test_submission_response_rejects_non_post_or_background_resources() -> None:
+    get_response = MagicMock()
+    get_response.request.method = "GET"
+    get_response.request.resource_type = "document"
+    image_response = MagicMock()
+    image_response.request.method = "POST"
+    image_response.request.resource_type = "image"
+
+    assert not _is_submission_response(get_response)
+    assert not _is_submission_response(image_response)
