@@ -78,6 +78,27 @@ class GreenhouseBoardSchema(BaseModel):
         return cls.model_validate(board)
 
 
+JobBoardProvider = Literal["greenhouse", "lever", "ashby", "workday"]
+
+
+class JobBoardSchema(BaseModel):
+    """Provider-neutral representation of a persisted job board."""
+
+    provider: JobBoardProvider
+    company: str | None
+    board_token: str
+    api_base: str
+
+    @classmethod
+    def from_greenhouse(cls, board: GreenhouseBoard) -> JobBoardSchema:
+        return cls(
+            provider="greenhouse",
+            company=board.company_name,
+            board_token=board.token,
+            api_base=board.api_url,
+        )
+
+
 class ApplicationStatus(BaseModel):
     job: JobEntrySchema
     status: Literal["applied", "failed"]

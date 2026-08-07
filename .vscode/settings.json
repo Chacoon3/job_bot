@@ -1,7 +1,7 @@
 {
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
-  "python.analysis.autoSearchPaths": false,
-  "python.analysis.include": ["src"],
+  "python.analysis.autoSearchPaths": true,
+  "python.analysis.include": ["src/job_bot", "tests"],
   "python.analysis.exclude": [
     "build/**",
     "**/*.egg-info/**",
