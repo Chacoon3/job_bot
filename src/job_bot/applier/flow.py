@@ -1,20 +1,47 @@
 from __future__ import annotations
 
 from datetime import datetime
+from importlib import import_module
+from typing import Any
 
 import structlog
-from langchain.agents import create_agent
-from langchain.messages import HumanMessage
-from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
 from job_bot.config import settings
 from job_bot.llm import OpenAILLMProvider
-from job_bot.openai_client import get_openai_client
 from job_bot.schemas import ApplicationStatus, JobEntrySchema, User
-from job_bot.utils.browser_tools import BrowserSession, build_browser_tools
 
 logger = structlog.get_logger(__name__)
+
+
+def create_agent(**kwargs: Any) -> Any:
+    """Load LangChain's agent factory only for browser application requests."""
+    return import_module("langchain.agents").create_agent(**kwargs)
+
+
+def async_playwright() -> Any:
+    """Load Playwright only when a browser-backed request starts."""
+    return import_module("playwright.async_api").async_playwright()
+
+
+def BrowserSession(*args: Any, **kwargs: Any) -> Any:  # pylint: disable=invalid-name
+    """Construct the browser session without importing browser tools at startup."""
+    session_class = import_module("job_bot.utils.browser_tools").BrowserSession
+    return session_class(*args, **kwargs)
+
+
+def build_browser_tools(session: Any) -> Any:
+    """Build browser tools lazily for an application attempt."""
+    return import_module("job_bot.utils.browser_tools").build_browser_tools(session)
+
+
+def _human_message(content: str) -> Any:
+    return import_module("langchain.messages").HumanMessage(content=content)
+
+
+def get_openai_client() -> Any:
+    """Load the OpenAI client module only for job-search requests."""
+    return import_module("job_bot.openai_client").get_openai_client()
 
 
 class JobQuery(BaseModel):
@@ -185,7 +212,7 @@ async def apply_job(job_url: str, candidate: User) -> dict[str, object]:
                 "profile or task context. Review the completed form before submitting."
             )
             return await agent.ainvoke(
-                {"messages": [HumanMessage(content=prompt)]},
+                {"messages": [_human_message(prompt)]},
             )
         finally:
             await session.stop()
@@ -196,7 +223,7 @@ async def apply_jobs(query: JobQuery, candidate: User) -> list[ApplicationStatus
     status: list[ApplicationStatus] = []
     for job in jobs:
         try:
-            resp = await apply_job(job.url, candidate)
+            await apply_job(job.url, candidate)
         except Exception as exc:
             status.append(
                 ApplicationStatus(

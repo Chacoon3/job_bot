@@ -1,12 +1,13 @@
 import hashlib
 from datetime import datetime, timedelta
+from importlib import import_module
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from job_bot.api.dependencies import get_session
+from job_bot.api.dependencies import get_session, require_browser_automation
 from job_bot.applier.flow import (
     ApplicationStatus,
     JobQuery,
@@ -14,16 +15,46 @@ from job_bot.applier.flow import (
     apply_jobs,
     find_jobs,
 )
-from job_bot.db.app_redis import AppRedisAsync
 from job_bot.db.job_models import Job
 from job_bot.db.upsert import batched_upsert
-from job_bot.job_providers.llm_job_provider import LLMJobProvider
-from job_bot.llm import OpenAILLMProvider
 from job_bot.schemas import JobEntrySchema, User
-from job_bot.utils.file_tools import parse_pure_text_pdf
-from job_bot.utils.resume_parser import ai_parse_resume
 
 router = APIRouter(prefix="/api", tags=["job_bot"])
+
+
+class _LazyAppRedisAsync:
+    """Resolve the legacy Redis client only when resume caching is used."""
+
+    async def get(self, key: str):
+        client = import_module("job_bot.db.app_redis").AppRedisAsync
+        return await client.get(key)
+
+    async def set(self, key: str, value: str):
+        client = import_module("job_bot.db.app_redis").AppRedisAsync
+        return await client.set(key, value)
+
+
+AppRedisAsync = _LazyAppRedisAsync()
+
+
+def LLMJobProvider(*args, **kwargs):  # pylint: disable=invalid-name
+    """Construct the legacy LLM job provider only for job-load requests."""
+    provider_class = import_module("job_bot.job_providers.llm_job_provider").LLMJobProvider
+    return provider_class(*args, **kwargs)
+
+
+def OpenAILLMProvider(*args, **kwargs):  # pylint: disable=invalid-name
+    """Construct the OpenAI provider without loading its SDK during startup."""
+    provider_class = import_module("job_bot.llm").OpenAILLMProvider
+    return provider_class(*args, **kwargs)
+
+
+def parse_pure_text_pdf(content: bytes) -> str:
+    return import_module("job_bot.utils.file_tools").parse_pure_text_pdf(content)
+
+
+def ai_parse_resume(resume: str) -> User:
+    return import_module("job_bot.utils.resume_parser").ai_parse_resume(resume)
 
 
 class LoadJobQuery(BaseModel):
@@ -43,7 +74,9 @@ def health() -> dict[str, str]:
 
 @router.post("/jobs/load")
 def load_jobs(
-    query: LoadJobQuery, session: Annotated[Session, Depends(get_session)]
+    query: LoadJobQuery,
+    session: Annotated[Session, Depends(get_session)],
+    _browser_enabled: Annotated[None, Depends(require_browser_automation)] = None,
 ) -> list[JobEntrySchema]:
     job_provider = LLMJobProvider(
         company_names=query.company_names,
@@ -125,7 +158,10 @@ async def user(request: Request) -> dict[str, str]:
 
 
 @router.post("/apply")
-async def api_apply(request: Request) -> ApplicationStatus:
+async def api_apply(
+    request: Request,
+    _browser_enabled: Annotated[None, Depends(require_browser_automation)] = None,
+) -> ApplicationStatus:
     form = await request.form()
     uploaded_file = form.get("file")
     job_url = form.get("job_url")
@@ -164,7 +200,10 @@ async def api_apply(request: Request) -> ApplicationStatus:
 
 
 @router.post("/find_and_apply")
-async def api_apply_jobs(request: Request) -> list[ApplicationStatus]:
+async def api_apply_jobs(
+    request: Request,
+    _browser_enabled: Annotated[None, Depends(require_browser_automation)] = None,
+) -> list[ApplicationStatus]:
 
     criteria = JobQuery(
         job_title="Software Engineer",

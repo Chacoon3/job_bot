@@ -101,6 +101,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+          target: api
           push: true
           tags: |
             ${{ steps.image.outputs.uri }}

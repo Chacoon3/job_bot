@@ -1,18 +1,9 @@
 from __future__ import annotations
 
+from importlib import import_module
+
 import structlog
 from fastapi import FastAPI
-from opentelemetry import metrics, trace
-from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from job_bot.config import setting_value, settings
 
@@ -46,7 +37,10 @@ def configure_telemetry(app: FastAPI) -> bool:
     if not traces_enabled and not metrics_enabled:
         return False
 
-    resource = Resource.create(
+    # Exporters and instrumentors are expensive imports, so load them only after
+    # configuration proves that telemetry is enabled for this process.
+    resource_class = import_module("opentelemetry.sdk.resources").Resource
+    resource = resource_class.create(
         {
             "service.name": cfg.OTEL_SERVICE_NAME,
             "service.version": "0.1.0",
@@ -55,17 +49,31 @@ def configure_telemetry(app: FastAPI) -> bool:
     )
 
     if traces_enabled:
-        tracer_provider = TracerProvider(resource=resource)
-        tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-        trace.set_tracer_provider(tracer_provider)
+        tracer_provider_class = import_module("opentelemetry.sdk.trace").TracerProvider
+        batch_processor_class = import_module("opentelemetry.sdk.trace.export").BatchSpanProcessor
+        span_exporter_class = import_module(
+            "opentelemetry.exporter.otlp.proto.http.trace_exporter"
+        ).OTLPSpanExporter
+        tracer_provider = tracer_provider_class(resource=resource)
+        tracer_provider.add_span_processor(batch_processor_class(span_exporter_class()))
+        import_module("opentelemetry.trace").set_tracer_provider(tracer_provider)
 
     if metrics_enabled:
-        metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
-        metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
+        meter_provider_class = import_module("opentelemetry.sdk.metrics").MeterProvider
+        metric_reader_class = import_module(
+            "opentelemetry.sdk.metrics.export"
+        ).PeriodicExportingMetricReader
+        metric_exporter_class = import_module(
+            "opentelemetry.exporter.otlp.proto.http.metric_exporter"
+        ).OTLPMetricExporter
+        metric_reader = metric_reader_class(metric_exporter_class())
+        import_module("opentelemetry.metrics").set_meter_provider(
+            meter_provider_class(resource=resource, metric_readers=[metric_reader])
+        )
 
-    FastAPIInstrumentor.instrument_app(app)
-    HTTPXClientInstrumentor().instrument()
-    SQLAlchemyInstrumentor().instrument()
+    import_module("opentelemetry.instrumentation.fastapi").FastAPIInstrumentor.instrument_app(app)
+    import_module("opentelemetry.instrumentation.httpx").HTTPXClientInstrumentor().instrument()
+    import_module("opentelemetry.instrumentation.sqlalchemy").SQLAlchemyInstrumentor().instrument()
     _configured = True
     logger.info(
         "opentelemetry_configured",

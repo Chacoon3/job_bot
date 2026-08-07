@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -6,6 +8,7 @@ class Settings(BaseSettings):
     # Core environment
     APP_ENV: str = "local"
     LOG_LEVEL: str = "INFO"
+    BROWSER_AUTOMATION_ENABLED: bool = True
 
     # Database
     DATABASE_URL: str | None = None
@@ -56,7 +59,9 @@ class Settings(BaseSettings):
     )
 
 
+@lru_cache(maxsize=1)
 def settings() -> Settings:
+    """Load immutable process settings once instead of reparsing ``.env``."""
     return Settings()
 
 

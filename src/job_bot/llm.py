@@ -1,15 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import cast
-
-from langchain.chat_models.base import BaseChatModel
-from langchain_anthropic import ChatAnthropic
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_huggingface import (
-    ChatHuggingFace,
-    HuggingFaceEndpoint,
-)
-from langchain_ollama import ChatOllama
-from langchain_openai import ChatOpenAI
+from importlib import import_module
+from typing import Any
 
 from job_bot.config import setting_value, settings
 
@@ -23,7 +14,7 @@ def _resolve_secret(explicit: str | None, env_var: str) -> str:
 
 class LLMProvider(ABC):
     @abstractmethod
-    def get_model(self) -> BaseChatModel:
+    def get_model(self) -> Any:
         raise NotImplementedError
 
 
@@ -42,19 +33,18 @@ class OpenAILLMProvider(LLMProvider):
         self.base_url = base_url
         self.parallel_tool_calls = parallel_tool_calls
 
-    def get_model(self) -> BaseChatModel:
-        return cast(
-            BaseChatModel,
-            ChatOpenAI(
-                model=self.model,
-                temperature=self.temperature,
-                api_key=_resolve_secret(self.api_key, "OPENAI_API_KEY"),
-                base_url=self.base_url,
-                model_kwargs=(
-                    {"parallel_tool_calls": self.parallel_tool_calls}
-                    if self.parallel_tool_calls is not None
-                    else {}
-                ),
+    def get_model(self) -> Any:
+        # Provider SDKs are intentionally loaded only when this provider is used.
+        chat_openai = import_module("langchain_openai").ChatOpenAI
+        return chat_openai(
+            model=self.model,
+            temperature=self.temperature,
+            api_key=_resolve_secret(self.api_key, "OPENAI_API_KEY"),
+            base_url=self.base_url,
+            model_kwargs=(
+                {"parallel_tool_calls": self.parallel_tool_calls}
+                if self.parallel_tool_calls is not None
+                else {}
             ),
         )
 
@@ -70,14 +60,12 @@ class GeminiLLMProvider(LLMProvider):
         self.temperature = temperature
         self.api_key = api_key
 
-    def get_model(self) -> BaseChatModel:
-        return cast(
-            BaseChatModel,
-            ChatGoogleGenerativeAI(
-                model=self.model,
-                temperature=self.temperature,
-                api_key=_resolve_secret(self.api_key, "GOOGLE_API_KEY"),
-            ),
+    def get_model(self) -> Any:
+        chat_google = import_module("langchain_google_genai").ChatGoogleGenerativeAI
+        return chat_google(
+            model=self.model,
+            temperature=self.temperature,
+            api_key=_resolve_secret(self.api_key, "GOOGLE_API_KEY"),
         )
 
 
@@ -92,14 +80,12 @@ class AnthropicLLMProvider(LLMProvider):
         self.temperature = temperature
         self.api_key = api_key
 
-    def get_model(self) -> BaseChatModel:
-        return cast(
-            BaseChatModel,
-            ChatAnthropic(
-                model_name=self.model,
-                temperature=self.temperature,
-                api_key=_resolve_secret(self.api_key, "ANTHROPIC_API_KEY"),
-            ),
+    def get_model(self) -> Any:
+        chat_anthropic = import_module("langchain_anthropic").ChatAnthropic
+        return chat_anthropic(
+            model_name=self.model,
+            temperature=self.temperature,
+            api_key=_resolve_secret(self.api_key, "ANTHROPIC_API_KEY"),
         )
 
 
@@ -120,8 +106,9 @@ class HuggingFaceRemoteLLMProvider(LLMProvider):
         self.provider = provider
         self.max_new_tokens = max_new_tokens
 
-    def get_model(self) -> BaseChatModel:
-        llm = HuggingFaceEndpoint(
+    def get_model(self) -> Any:
+        huggingface = import_module("langchain_huggingface")
+        llm = huggingface.HuggingFaceEndpoint(
             model=self.model,
             endpoint_url=self.endpoint_url,
             provider=self.provider,
@@ -132,7 +119,7 @@ class HuggingFaceRemoteLLMProvider(LLMProvider):
             temperature=self.temperature,
             max_new_tokens=self.max_new_tokens,
         )
-        return cast(BaseChatModel, ChatHuggingFace(llm=llm))
+        return huggingface.ChatHuggingFace(llm=llm)
 
 
 class OllamaLLMProvider(LLMProvider):
@@ -146,12 +133,10 @@ class OllamaLLMProvider(LLMProvider):
         self.temperature = temperature
         self.base_url = base_url or settings().OLLAMA_BASE_URL
 
-    def get_model(self) -> BaseChatModel:
-        return cast(
-            BaseChatModel,
-            ChatOllama(
-                model=self.model,
-                temperature=self.temperature,
-                base_url=self.base_url,
-            ),
+    def get_model(self) -> Any:
+        chat_ollama = import_module("langchain_ollama").ChatOllama
+        return chat_ollama(
+            model=self.model,
+            temperature=self.temperature,
+            base_url=self.base_url,
         )

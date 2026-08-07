@@ -4,6 +4,8 @@ import sys
 from types import ModuleType
 from unittest.mock import Mock
 
+import pytest
+
 # Application modules build the fail-open Redis cache at import time. Unit tests
 # do not need a live Redis server, but they do need a syntactically valid URL.
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
@@ -20,3 +22,13 @@ sys.modules.setdefault(
     "job_bot.agent.applier_agent",
     importlib.import_module("job_bot.agent.fill_form_agent"),
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_settings_cache():
+    """Let tests that modify environment variables observe fresh settings."""
+    from job_bot.config import settings
+
+    settings.cache_clear()
+    yield
+    settings.cache_clear()

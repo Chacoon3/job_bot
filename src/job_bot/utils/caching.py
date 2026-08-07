@@ -16,13 +16,13 @@ def _read_float_env(name: str) -> float | None:
         return None
 
 
-def _build_redis_cache() -> RedisCache:
+def _build_redis_cache() -> RedisCache | DiskCache:
     default_ttl = _read_float_env("APP_CACHE_TTL_SECONDS")
 
     cfg = settings()
     redis_url = cfg.REDIS_URL
     if not redis_url:
-        raise ValueError("REDIS_URL environment variable is required for RedisCache")
+        return _build_disk_cache()
     redis_prefix = cfg.REDIS_CACHE_PREFIX
     redis_timeout = _read_float_env("REDIS_SOCKET_TIMEOUT_SECONDS")
     socket_timeout = 1.0 if redis_timeout is None else redis_timeout

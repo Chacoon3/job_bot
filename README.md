@@ -6,7 +6,7 @@ Python app scaffolded for deployment to Google Cloud Run.
 
 - `src/job_bot/main.py`: FastAPI app entrypoint
 - `tests/test_health.py`: Basic API tests
-- `Dockerfile`: Container image for Cloud Run
+- `Dockerfile`: Lightweight API and browser-worker container targets for Cloud Run
 - `.github/workflows/cd.yml`: Cloud Run continuous-deployment workflow
 
 ## Local setup
@@ -98,10 +98,28 @@ Then open `http://localhost:16686` after sending requests to the application.
 
 ## Build container locally
 
+The default `api` target does not contain Chromium. Browser-backed endpoints
+return HTTP 503 in that image so application traffic can be routed explicitly
+to the browser-capable service.
+
 ```bash
 docker build -t job-bot:local .
 docker run --rm -p 8080:8080 job-bot:local
 ```
+
+Build the separate browser-worker image when job application automation is
+required:
+
+```bash
+docker build --target browser-worker -t job-bot-browser:local .
+docker run --rm -p 8081:8080 job-bot-browser:local
+```
+
+The browser-worker exposes the same authenticated API surface, with
+`BROWSER_AUTOMATION_ENABLED=true` and Chromium installed. Route `/api/jobs/load`,
+`/api/apply`, `/api/find_and_apply`, and `/apiv2/apply` to this service. The
+default target keeps health, user, database, and non-browser discovery routes in
+the smaller API image.
 
 ## Deploy to Cloud Run
 

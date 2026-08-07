@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from importlib import import_module
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -9,14 +10,28 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from job_bot.api.dependencies import get_session
-from job_bot.greenhouse.jobs import GreenhouseBoardSyncPolicy, GreenhouseJobSyncService
+from job_bot.greenhouse.jobs import GreenhouseBoardSyncPolicy
 from job_bot.greenhouse.models import DiscoveryConfig, DiscoveryReport
 from job_bot.greenhouse.repository import list_boards, upsert_boards
-from job_bot.greenhouse.service import GreenhouseCompanyDiscoverer, GreenhouseGlobalDiscoverer
 from job_bot.llm import OpenAILLMProvider
 from job_bot.schemas import GreenhouseBoardSchema
 
 router = APIRouter(prefix="/api", tags=["job_bot"])
+
+
+def GreenhouseGlobalDiscoverer(*args, **kwargs):  # pylint: disable=invalid-name
+    discoverer = import_module("job_bot.greenhouse.service").GreenhouseGlobalDiscoverer
+    return discoverer(*args, **kwargs)
+
+
+def GreenhouseCompanyDiscoverer(*args, **kwargs):  # pylint: disable=invalid-name
+    discoverer = import_module("job_bot.greenhouse.service").GreenhouseCompanyDiscoverer
+    return discoverer(*args, **kwargs)
+
+
+def GreenhouseJobSyncService(*args, **kwargs):  # pylint: disable=invalid-name
+    service = import_module("job_bot.greenhouse.jobs").GreenhouseJobSyncService
+    return service(*args, **kwargs)
 
 
 class BoardSortBy(StrEnum):

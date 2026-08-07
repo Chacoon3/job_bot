@@ -134,11 +134,11 @@ async def _evaluate(state: _State, runtime: Runtime[_Runtime]) -> _State:
     if not state.messages:
         raise RuntimeError("Agent state contains no messages.")
     structured = runtime.context.model.with_structured_output(_AgentInferredFormAnswer)
-    msg = await structured.ainvoke(
+    msg: _AgentInferredFormAnswer = await structured.ainvoke(
         state.messages
         + [HumanMessage(content="Provide the inferred answers for the form fields in JSON format.")]
     )
-    return _State(call_count=0, answers=msg)
+    return _State(call_count=0, answers=msg.answers)
 
 
 def post_act_router(state: _State) -> str:
@@ -208,7 +208,7 @@ class _AgentInferredFormAnswer(BaseModel):
 
 async def agent_infer_interactive_element_answer(
     model: BaseChatModel, tools: list[BaseTool], fields: list[FormField], user: User
-) -> str:
+) -> list[_FormAnswer]:
     """
     Ask the agent to infer the answer for an interactive form element on a web page.
 
@@ -219,7 +219,7 @@ async def agent_infer_interactive_element_answer(
         user (User): The user information.
 
     Returns:
-        str: The inferred answer for the form fields.
+        list[_FormAnswer]: The inferred answer for the form fields.
     """
     tool_registry = {tool.name: tool for tool in tools}
     model_with_browser_tools = model.bind_tools(tools)
@@ -253,4 +253,4 @@ async def agent_infer_interactive_element_answer(
     )
 
     resp = await _get_answer_agent().ainvoke(state, context=runtime)
-    return resp["messages"][-1].content
+    return state.answers

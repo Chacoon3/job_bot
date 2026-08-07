@@ -46,7 +46,10 @@ def test_get_openai_client_recreates_when_config_changes(monkeypatch) -> None:
 
 
 def test_get_openai_client_raises_without_api_key(monkeypatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "job_bot.openai_client.settings",
+        lambda: type("Settings", (), {"OPENAI_API_KEY": None})(),
+    )
     get_openai_client.cache_clear()
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
         get_openai_client()

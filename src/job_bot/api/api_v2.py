@@ -1,11 +1,10 @@
+from importlib import import_module
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from playwright.async_api import async_playwright
 from sqlalchemy.orm import Session
 
-from job_bot.api.dependencies import get_session
-from job_bot.applier.greenhouse_applier import GreenHouseFiller
+from job_bot.api.dependencies import get_session, require_browser_automation
 from job_bot.schemas import ApplicationFileSet
 from job_bot.users import canonical_email, get_user, user_from_record
 from job_bot.utils.file_tools import extract_uploadable_file
@@ -13,10 +12,22 @@ from job_bot.utils.file_tools import extract_uploadable_file
 router = APIRouter(prefix="/apiv2", tags=["job_bot"])
 
 
+def async_playwright() -> Any:
+    """Load Playwright only for browser application requests."""
+    return import_module("playwright.async_api").async_playwright()
+
+
+def GreenHouseFiller(*args: Any, **kwargs: Any) -> Any:  # pylint: disable=invalid-name
+    """Construct the Greenhouse filler without loading the agent graph at startup."""
+    filler_class = import_module("job_bot.applier.greenhouse_applier").GreenHouseFiller
+    return filler_class(*args, **kwargs)
+
+
 @router.post("/apply")
 async def inspect(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
+    _browser_enabled: Annotated[None, Depends(require_browser_automation)] = None,
 ) -> Any:
     form = await request.form()
     email = form.get("email")

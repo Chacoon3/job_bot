@@ -40,7 +40,7 @@ def test_configure_logging_uses_console_renderer_locally(monkeypatch, capsys) ->
 def test_configure_logging_routes_standard_library_logs_through_renderer(
     monkeypatch, capsys
 ) -> None:
-    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.setenv("APP_ENV", "production")
     configure_logging()
 
     logging.getLogger("dependency").warning("dependency_warning")
