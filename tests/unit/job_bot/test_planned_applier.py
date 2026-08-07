@@ -75,13 +75,13 @@ def test_inspect_page_generates_and_saves_versioned_inspection(monkeypatch) -> N
         return_value=SimpleNamespace(output_parsed=PageInspection(form_fields=[field]))
     )
     monkeypatch.setattr(
-        "job_bot.agent.planned_applier.get_async_openai_client",
+        "job_bot.agent.mixed_job_agent.get_async_openai_client",
         lambda: client,
     )
     monkeypatch.setenv("JOB_BOT_LLM_MODEL", "test-model")
-    monkeypatch.setattr("job_bot.agent.planned_applier._load_page_inspections", lambda *_: [])
+    monkeypatch.setattr("job_bot.agent.mixed_job_agent._load_page_inspections", lambda *_: [])
     monkeypatch.setattr(
-        "job_bot.agent.planned_applier._save_page_inspections",
+        "job_bot.agent.mixed_job_agent._save_page_inspections",
         lambda received_session, url, version, inspections: saved.update(
             session=received_session,
             url=url,
@@ -116,9 +116,9 @@ def test_inspect_page_returns_matching_database_inspections(monkeypatch) -> None
     save = Mock()
     client_factory = Mock()
     monkeypatch.setenv("JOB_BOT_LLM_MODEL", "test-model")
-    monkeypatch.setattr("job_bot.agent.planned_applier._load_page_inspections", load)
-    monkeypatch.setattr("job_bot.agent.planned_applier._save_page_inspections", save)
-    monkeypatch.setattr("job_bot.agent.planned_applier.get_async_openai_client", client_factory)
+    monkeypatch.setattr("job_bot.agent.mixed_job_agent._load_page_inspections", load)
+    monkeypatch.setattr("job_bot.agent.mixed_job_agent._save_page_inspections", save)
+    monkeypatch.setattr("job_bot.agent.mixed_job_agent.get_async_openai_client", client_factory)
 
     result = asyncio.run(inspect_page(url, session))
 
@@ -135,56 +135,29 @@ def test_inspect_page_rejects_unparsed_response(monkeypatch) -> None:
     client = Mock()
     client.responses.parse = AsyncMock(return_value=SimpleNamespace(output_parsed=None))
     monkeypatch.setattr(
-        "job_bot.agent.planned_applier.get_async_openai_client",
+        "job_bot.agent.mixed_job_agent.get_async_openai_client",
         lambda: client,
     )
     monkeypatch.setenv("JOB_BOT_LLM_MODEL", "test-model")
-    monkeypatch.setattr("job_bot.agent.planned_applier._load_page_inspections", lambda *_: [])
+    monkeypatch.setattr("job_bot.agent.mixed_job_agent._load_page_inspections", lambda *_: [])
 
     with pytest.raises(RuntimeError, match="Unexpected page inspection response type"):
         asyncio.run(inspect_page("https://example.com/apply?test=unparsed", session))
 
 
-def test_agent_flow_keeps_page_after_navigation(monkeypatch) -> None:
-    field = _form_field()
-    navigation_response = object()
-    page = SimpleNamespace(goto=AsyncMock(return_value=navigation_response))
+def test_agent_flow_runs_greenhouse_filler(monkeypatch) -> None:
     filler = SimpleNamespace(apply=AsyncMock())
     user = SimpleNamespace()
     file_set = SimpleNamespace()
-    session = Mock()
-    browser_sessions = []
-
-    class FakeBrowserSession:
-        def __init__(self, playwright: object, headless: bool) -> None:
-            self.playwright = playwright
-            self.headless = headless
-            browser_sessions.append(self)
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, traceback) -> None:
-            return None
-
-        def page(self):
-            return page
-
-    inspection = PageInspection(form_fields=[field])
-    inspect = AsyncMock(return_value=inspection)
     filler_factory = Mock(return_value=filler)
-    monkeypatch.setattr("job_bot.agent.planned_applier.BrowserSession", FakeBrowserSession)
-    monkeypatch.setattr("job_bot.agent.planned_applier.inspect_active_page", inspect)
-    monkeypatch.setattr("job_bot.agent.planned_applier.GreenHouseFiller", filler_factory)
-    monkeypatch.setattr("job_bot.agent.planned_applier.asyncio.sleep", AsyncMock())
+    sleep = AsyncMock()
+    monkeypatch.setattr("job_bot.agent.mixed_job_agent.GreenHouseFiller", filler_factory)
+    monkeypatch.setattr("job_bot.agent.mixed_job_agent.asyncio.sleep", sleep)
 
     playwright = SimpleNamespace()
-    asyncio.run(agent_flow("https://example.com/apply", playwright, user, file_set, session))
+    url = "https://example.com/apply"
+    asyncio.run(agent_flow(url, playwright, user, file_set))
 
-    page.goto.assert_awaited_once_with(
-        "https://example.com/apply",
-        wait_until="domcontentloaded",
-    )
-    inspect.assert_awaited_once_with(page)
-    filler_factory.assert_called_once_with(browser_sessions[0], user, [inspection], file_set)
+    filler_factory.assert_called_once_with(playwright, user, url, file_set)
     filler.apply.assert_awaited_once_with()
+    sleep.assert_awaited_once_with(30)

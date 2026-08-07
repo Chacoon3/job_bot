@@ -22,14 +22,17 @@ def test_greenhouse_filler_uses_the_active_page(monkeypatch) -> None:
     locate = Mock(return_value=locator)
     fill_text = AsyncMock()
     visible_assertion = SimpleNamespace(to_be_visible=AsyncMock())
-    monkeypatch.setattr("job_bot.agent.greenhouse_applier.locate_by_accessible_name", locate)
-    monkeypatch.setattr("job_bot.agent.greenhouse_applier.fill_text_field", fill_text)
+    monkeypatch.setattr("job_bot.applier.greenhouse_applier.locate_by_accessible_name", locate)
+    monkeypatch.setattr("job_bot.applier.greenhouse_applier.fill_text_field", fill_text)
     monkeypatch.setattr(
-        "job_bot.agent.greenhouse_applier.expect",
+        "job_bot.applier.greenhouse_applier.expect",
         Mock(return_value=visible_assertion),
     )
 
-    asyncio.run(GreenHouseFiller(browser_session, Mock(), []).fill(field, "Zizheng"))
+    filler = GreenHouseFiller(Mock(), Mock(), "https://example.com/apply")
+    filler.browser_session = browser_session
+
+    asyncio.run(filler.fill(field, "Zizheng"))
 
     browser_session.page.assert_called_once_with()
     locate.assert_called_once_with(page, "First Name", None)

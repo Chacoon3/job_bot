@@ -1,11 +1,32 @@
 import asyncio
 
+from langchain.chat_models import BaseChatModel
 from langchain.messages import AIMessage, AnyMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import tool
 
 from job_bot.agent.fill_form_agent import _get_answer_agent as _get_applier_agent
 from job_bot.agent.fill_form_agent import _Runtime, _State
+from job_bot.schemas import AgentInferredFormAnswer
+
+
+class FakeChatModel(BaseChatModel):
+    @property
+    def _llm_type(self) -> str:
+        return "test"
+
+    def _generate(self, *_args, **_kwargs):
+        raise AssertionError("The bound model should handle agent actions.")
+
+    def with_structured_output(self, _schema):
+        return RunnableLambda(lambda _messages: AgentInferredFormAnswer(answers=[]))
+
+
+def _runtime(model_with_browser_tools: RunnableLambda) -> _Runtime:
+    return _Runtime(
+        model=FakeChatModel(),
+        model_with_browser_tools=model_with_browser_tools,
+    )
 
 
 def test_applier_agent_receives_model_through_runtime_context() -> None:
@@ -13,7 +34,7 @@ def test_applier_agent_receives_model_through_runtime_context() -> None:
         assert messages[-1].content == "Fill this field"
         return AIMessage(content="done")
 
-    context = _Runtime(model=RunnableLambda(invoke_model))
+    context = _runtime(RunnableLambda(invoke_model))
     state = _State(messages=[HumanMessage(content="Fill this field")])
 
     result = asyncio.run(_get_applier_agent().ainvoke(state, context=context))
@@ -22,7 +43,7 @@ def test_applier_agent_receives_model_through_runtime_context() -> None:
     assert result["call_count"] == 1
 
 
-def test_applier_agent_limits_successful_page_inspection_to_one() -> None:
+def test_applier_agent_executes_each_requested_tool() -> None:
     model_calls = 0
     inspection_calls = 0
 
@@ -50,17 +71,14 @@ def test_applier_agent_limits_successful_page_inspection_to_one() -> None:
         inspection_calls += 1
         return "The field asks whether the candidate resides in the United States."
 
-    context = _Runtime(
-        model=RunnableLambda(invoke_model),
-        tool_registry={"inspect_page": inspect_page},
-    )
+    context = _runtime(RunnableLambda(invoke_model))
+    context.tool_registry = {"inspect_page": inspect_page}
     state = _State(messages=[HumanMessage(content="Infer the answer")])
 
     result = asyncio.run(_get_applier_agent().ainvoke(state, context=context))
 
-    assert inspection_calls == 1
-    assert result["successful_inspection_count"] == 1
+    assert inspection_calls == 2
     assert result["tool_call_count"] == 2
-    assert result["failure_count"] == 1
+    assert result["failure_count"] == 0
     assert result["call_count"] == 3
     assert result["messages"][-1].content == "Yes"
